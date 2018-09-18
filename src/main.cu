@@ -158,7 +158,6 @@ void processLoop(std::vector<std::string>* toProcess, std::string* base_path, in
 		h = im.rows;
 		w = im.cols;
 		int imSize = h*w*sizeof(unsigned char);
-		
 		if(!inited)
 		{
 			gpuErrchk( cudaMalloc((void**) &gpuIm, imSize) );
@@ -175,7 +174,7 @@ void processLoop(std::vector<std::string>* toProcess, std::string* base_path, in
 		// std::string outImgPath = std::regex_replace(curPath, std::regex(base_path), output_path);
 		// processImage(curPath, outImgPath, "fake", 20, kernel);
 	}
-
+	gpuErrchk( cudaFree(gpuIm) );
 	for(auto s : *stats)
 	{
 		s->finalize();
@@ -223,7 +222,7 @@ std::vector<int> parseDeviceList(std::string devList)
 int main( int argc, char** argv )
 {
 	// grab the arguments
-	std::string base_path, depth_path;
+	std::string base_path, depth_path, output_path;
 	std::string ending = "png";
 	int numThread = 8;
 	std::vector<int> availDevice = {0}; //static max number because this uses a lot of GPU, so only one per GPU
@@ -232,6 +231,8 @@ int main( int argc, char** argv )
 	{
 		if (strcmp(argv[i], "-i") == 0)
 			base_path = argv[i+1];
+		if (strcmp(argv[i], "-o") == 0)
+			output_path = argv[i+1];
 		if (strcmp(argv[i], "-d") == 0)
 			depth_path = argv[i + 1];
 		if (strcmp(argv[i], "-e") == 0)
@@ -245,6 +246,7 @@ int main( int argc, char** argv )
 	}
 
 	std::cout << "base path: '" << base_path << "'" << std::endl;
+	std::cout << "output path: '" << output_path << "'" << std::endl;
 	std::cout << "num thread: " << numThread << std::endl;
 	std::cout << "using gpus (";
 	for(auto& v : availDevice)
@@ -279,13 +281,17 @@ int main( int argc, char** argv )
 	for(auto s : stats)
 	{
 		s->merge();
-		std::cout << "===============STAT===============" << std::endl;
-		s->viz();
-		std::cout << "==================================" << std::endl;
 	}
-	std::cout << std::endl;
 
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
 	float sec = ((float)duration.count()/1000.0f);
 	std::cout << "finished in " << sec << " seconds (" << (toProcess.size()/sec) << " im/sec)" << std::endl;
+
+	for(auto s : stats)
+	{
+		std::cout << "===============STAT===============" << std::endl;
+		s->save(output_path);
+		std::cout << "==================================" << std::endl;
+	}
+	std::cout << std::endl;
 }

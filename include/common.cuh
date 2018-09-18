@@ -11,10 +11,11 @@ namespace cudaKernels
     {
         const int x = (blockIdx.x * blockDim.x) + threadIdx.x;
         const int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+        const int z = (blockIdx.z * blockDim.z) + threadIdx.z;
 
-        if (x >= w || y >= h) return;
+        if (x >= w || y >= h || z >= d) return;
 
-        int ind = (y*w + x)*d;
+        int ind = (y*w + x)*d + z;
 
         gpuC[ind] = gpuA[ind] + gpuB[ind];
     }
@@ -23,9 +24,11 @@ namespace cudaKernels
 template <typename T>
 void add(T* gpuA, T* gpuB, T* gpuC, int h, int w, int d)
 {
-    dim3 threads(16,16);
-	dim3 blocks((w/threads.x)+1, (h/threads.y)+1); // blocks running on core
-    cudaKernels::addOp<<<blocks, threads>>>(gpuA, gpuB, gpuC, h, w, d);
+    dim3 blockDim(8,8,8);
+	dim3 blocks((w/blockDim.x)+1, (h/blockDim.y)+1, (d/blockDim.z)+1); // blocks running on core
+    cudaKernels::addOp<<<blocks, blockDim>>>(gpuA, gpuB, gpuC, h, w, d);
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
 }
 
 /*#define makeBiOp(name, op)   \

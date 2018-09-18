@@ -5,6 +5,11 @@
 #include "common.cuh"
 
 #include <cuda.h>
+#include <mutex>
+#include <experimental/filesystem>
+#include <sstream>
+
+namespace fs = std::experimental::filesystem;
 
 namespace cudaKernels
 {
@@ -13,20 +18,24 @@ namespace cudaKernels
     {
         const int x = (blockIdx.x * blockDim.x) + threadIdx.x;
         const int y = (blockIdx.y * blockDim.y) + threadIdx.y;
+        // only support d = 1
 
         if (x >= w || y >= h) return;
 
-        int ind = (y*w + x)*d;
-
-        gpuFreqs[gpu_im[ind]]++;
+        int ind = (y*w + x);
+        unsigned char cls = gpu_im[ind];
+        ind = (y*w + x)*maxClass;
+        if(cls < maxClass)
+            gpuFreqs[ind + cls]++;
     }
 } //cudaKernels
 
 class frequency : public stat
 {
 private:
-    static const int maxClass = 256;
+    static const int maxClass = 20;
     std::unordered_map<std::thread::id, long long*> gpuFreqs;
+    std::mutex writeLock;
     int h,w,d;
     long long* cpuRes;
 public:
@@ -34,7 +43,14 @@ public:
     {
         this->name = "frequency";
     }
-    ~frequency(){ }
+    ~frequency()
+    {
+        if(cpuRes)
+            delete cpuRes;
+        // for(long long* f : gpuFreqs)
+        //     gpuErrchk( cudaFree(f) );
+        
+    }
     void accumulate(unsigned char* gpuIm, int h, int w, int d)
     {
         std::thread::id tId = std::this_thread::get_id();
@@ -45,18 +61,20 @@ public:
         if(gpuFreqs.count(tId) <= 0)
         {
             this->h = h; this->w = w; this->d = d;
-            ///int imSize = h*w*d*sizeof(long long)*maxClass;
-            int imSize = sizeof(long long)*maxClass;
+            long imSize = h*w*d*sizeof(long long)*maxClass;
+            //int imSize = sizeof(long long)*maxClass;
             long long* tempGpu;
             gpuErrchk( cudaMalloc((void**) &tempGpu, imSize) );
+            gpuErrchk( cudaMemset(tempGpu, 0, imSize) );
+            std::lock_guard<std::mutex> guard(writeLock);
             gpuFreqs[tId] = tempGpu;
         }
         if(this->h != h || this->w != w || this->d != d)
             throw std::runtime_error("Cannot handle different sized images");
         
-        dim3 threads(16,16);
-		dim3 blocks((w/threads.x)+1, (h/threads.y)+1); // blocks running on core
-        cudaKernels::accFreq<<<blocks, threads>>>(gpuIm, gpuFreqs[tId], h, w, d, maxClass);
+        dim3 blockDim(16,16);
+		dim3 blocks((w/blockDim.x)+1, (h/blockDim.y)+1); // blocks running on core
+        cudaKernels::accFreq<<<blocks, blockDim>>>(gpuIm, gpuFreqs[tId], h, w, d, maxClass);
 		gpuErrchk( cudaPeekAtLastError() );
 		gpuErrchk( cudaDeviceSynchronize() );
     }
@@ -67,39 +85,56 @@ public:
     void merge()
     {
         long long* tempGpu;
-        // int imSize = h*w*d*sizeof(long long)*maxClass;
-        int imSize = sizeof(long long)*maxClass;
+        long imSize = h*w*d*sizeof(long long)*maxClass;
+        //int imSize = sizeof(long long)*maxClass;
         gpuErrchk( cudaMalloc((void**) &tempGpu, imSize) );
         for (auto & it : gpuFreqs) {
-            add(tempGpu, it.second, tempGpu, maxClass, 1, 1);
+            add(tempGpu, it.second, tempGpu, h, w, maxClass);
         }
-        cpuRes = new long long[maxClass];
+        cpuRes = new long long[h*w*d*maxClass];
         gpuErrchk( cudaMemcpy(cpuRes, tempGpu, imSize, cudaMemcpyDeviceToHost) );
+        gpuErrchk( cudaFree(tempGpu) );
     }
 
-    void viz()
+    void save(std::string outputFolder)
     {
-		std::cout << name << ":" << std::endl;
-        for(int i = 0; i < maxClass; i++)
+        fs::path base = outputFolder;
+        base = base / name;
+        fs::create_directories(base);
+        long double numPix = h*w*d;
+        std::vector<std::vector<unsigned char>> frames;
+        std::vector<bool> hasValues;
+        for (int c = 0; c < maxClass; c++)
         {
-            if(cpuRes[i] != 0)
-                std::cout << "class " << i << ": " << cpuRes[i] << std::endl;
+            std::vector<unsigned char> cur(h*w*d);
+            long double maxVal = -1;
+            for (int i = 0; i < h*w*d; i++)
+            {
+                long double temp = (long double)cpuRes[i*maxClass + c];
+                if(temp > maxVal)
+                    maxVal = temp;
+            }
+            for (int i = 0; i < h*w*d; i++)
+            {
+                long double temp = (long double)cpuRes[i*maxClass + c] / maxVal;
+                cur[i] = (unsigned char)(temp*255.0);
+            }
+            hasValues.push_back(maxVal != 0);
+            frames.push_back(cur);
         }
-        // std::vector<cv::Mat> classes(maxClass);
-        // long double numPix = h*w;
-        // long double* tempRes = new long double[maxClass];
-        // for (int i = 0; i < maxClass; i++)
-        // {
-        //     tempRes[i] = cpuRes[i] / numPix;
-        // }
-        // for (int i=0; i < (int)classes.size(); i++) 
-        // {
-        //     classes[i] = cv::Mat(h, w, CV_64F, tempRes+i*h*w*sizeof(long double));
-        //     double min, max;
-        //     cv::minMaxLoc(classes[i], &min, &max);
-        //     std::cout << min << "," << max << std::endl;
-        //     cv::imshow(std::to_string(i), classes[i]);
-        //     cv::waitKey();
-        // }
+        std::vector<cv::Mat> classes(maxClass);
+        for (int i=0; i < (int)classes.size(); i++) 
+        {
+            classes[i] = cv::Mat(h, w, CV_8UC1);
+            memcpy(classes[i].data, frames[i].data(), frames[i].size()*sizeof(char));
+            if(hasValues[i])
+            {
+                std::stringstream ss;
+                ss << base.string() << "/" << i << ".png";
+                cv::imshow(std::to_string(i), classes[i]);
+                cv::imwrite(ss.str(), classes[i]);
+            }
+        }
+        cv::waitKey();
     }
 };

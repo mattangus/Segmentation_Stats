@@ -18,5 +18,5 @@ public:
     // }
     virtual void finalize() = 0;
     virtual void merge() = 0;
-    virtual void viz() = 0;
+    virtual void save(std::string outputFolder) = 0;
 };
