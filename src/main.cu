@@ -246,10 +246,10 @@ int main( int argc, char** argv )
 
 	std::cout << "base path: '" << base_path << "'" << std::endl;
 	std::cout << "num thread: " << numThread << std::endl;
-	std::cout << "using (";
+	std::cout << "using gpus (";
 	for(auto& v : availDevice)
 		std::cout << v << ", ";
-	std::cout << ") gpus" << std::endl;
+	std::cout << ")" << std::endl;
 
 	std::vector<std::shared_ptr<stat>> stats = manager.getStatList();
 
@@ -279,8 +279,11 @@ int main( int argc, char** argv )
 	for(auto s : stats)
 	{
 		s->merge();
+		std::cout << "===============STAT===============" << std::endl;
 		s->viz();
+		std::cout << "==================================" << std::endl;
 	}
+	std::cout << std::endl;
 
 	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
 	float sec = ((float)duration.count()/1000.0f);

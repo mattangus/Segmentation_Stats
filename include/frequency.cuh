@@ -79,6 +79,7 @@ public:
 
     void viz()
     {
+		std::cout << name << ":" << std::endl;
         for(int i = 0; i < maxClass; i++)
         {
             if(cpuRes[i] != 0)
