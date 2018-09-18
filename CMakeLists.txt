@@ -5,7 +5,7 @@ project(SegStats)
 find_package(OpenCV REQUIRED)
 find_package(CUDA REQUIRED)
 
-set(CMAKE_CXX_FLAGS "--std=c++11 -fPIC -O2 -D_GLIBCXX_USE_CXX11_ABI=0 -D GOOGLE_CUDA=1")
+set(CMAKE_CXX_FLAGS "--std=c++11 -Wall -fPIC -O2 -D_GLIBCXX_USE_CXX11_ABI=0 -D GOOGLE_CUDA=1")
 set(CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} --default-stream per-thread" )
 set(CMAKE_BUILD_TYPE Debug)
 

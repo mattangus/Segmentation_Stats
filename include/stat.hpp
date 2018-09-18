@@ -3,22 +3,20 @@
 
 /**
  * @brief Abstract class for tracking statistics
- * 
- * @tparam T object over which to track
+ *
  */
-template <typename T>
 class stat
 {
 protected:
     std::string name;
-    int numThreads;
 public:
     virtual ~stat() { }
-    virtual void accumulate(T obj, int thread) = 0;
-    void accumulate(char* d_obj)
-    {
-        accumulate(d_obj, 0);
-    }
-    virtual void finalize(int thread) = 0;
+    virtual void accumulate(unsigned char* gpuObj, int h, int w, int d) = 0;
+    // void accumulate(unsigned char* d_obj, int h, int w, int d)
+    // {
+    //     accumulate(d_obj, int h, int w, int d, 0);
+    // }
+    virtual void finalize() = 0;
     virtual void merge() = 0;
+    virtual void viz() = 0;
 };
