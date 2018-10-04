@@ -4,17 +4,32 @@
 #include <cstdio>
 #include <cuda.h>
 #include <cuda_runtime_api.h>
+#include <cudnn.h>
 #include <exception>
 #include <sstream>
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+
+inline void gpuAssert(cudnnStatus_t code, const char *file, int line, bool abort=true)
+{
+    if (code != CUDNN_STATUS_SUCCESS) 
+    {
+        std::stringstream ss;
+        ss << "CuDNNassert: (" << code << ") " << cudnnGetErrorString(code) << " " << file << " " << line;
+        std::cerr << ss.str() << std::endl;
+        if (abort)
+        {
+            throw std::runtime_error(ss.str());
+        }
+    }
+}
 
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true)
 {
     if (code != cudaSuccess) 
     {
         std::stringstream ss;
-        ss << "GPUassert: (" << code << ") " << cudaGetErrorString(code) << " " << file << " " << line;
+        ss << "CUDAassert: (" << code << ") " << cudaGetErrorString(code) << " " << file << " " << line;
         std::cerr << ss.str() << std::endl;
         if (abort)
         {
