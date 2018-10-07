@@ -20,7 +20,7 @@
 #include "helpers.cuh"
 #include "pixelFreq.cuh"
 #include "statManager.hpp"
-#include "tensor.h"
+#include "tensor.cuh"
 
 namespace fs = std::experimental::filesystem;
 
@@ -57,10 +57,10 @@ void processLoop(std::vector<std::string>* toProcess, std::string* base_path, in
 	gpuErrchk( cudaPeekAtLastError() );
 	gpuErrchk( cudaDeviceSynchronize() );
 
-	std::shared_ptr<tensor<unsigned char>> gpuIm;
+	std::shared_ptr<tensorUint8> gpuIm(new tensor<unsigned char>(cudnn));
 	bool inited = false;
 
-	int h, w;
+	
 
 	for(int i = 0; i < (int)toProcess->size(); i++)
 	{
@@ -75,27 +75,29 @@ void processLoop(std::vector<std::string>* toProcess, std::string* base_path, in
 		}
 		cv::Mat bgr[3]; //destination array
 		cv::split(im,bgr); //split source
-		h = im.rows;
-		w = im.cols;
-		int imSize = h*w*sizeof(unsigned char);
+		//int imSize = h*w*sizeof(unsigned char);
 		if(!inited)
 		{
-			//gpuIm = std::shared_ptr<tensor<unsigned char>>(new tensor<unsigned char>(cudnn, 1, h, w, 1, true));
-			gpuErrchk( cudaMalloc((void**) &gpuIm, imSize) );
+			// int h, w;
+			// h = im.rows;
+			// w = im.cols;
+			gpuIm->setDims(1, im.rows, im.cols, 1, true);
+			//gpuErrchk( cudaMalloc((void**) &gpuIm, imSize) );
 			inited = true;
 		}
 
-		gpuErrchk( cudaMemcpy(gpuIm, bgr[0].ptr(), imSize, cudaMemcpyHostToDevice) );
+		// gpuErrchk( cudaMemcpy(gpuIm, bgr[0].ptr(), imSize, cudaMemcpyHostToDevice) );
+		gpuIm->toGpu(bgr[0].ptr());
 
 		for(auto s : *stats)
 		{
-			s->accumulate(cudnn, gpuIm, h, w, 1);
+			s->accumulate(cudnn, gpuIm);
 		}
 
 		// std::string outImgPath = std::regex_replace(curPath, std::regex(base_path), output_path);
 		// processImage(curPath, outImgPath, "fake", 20, kernel);
 	}
-	gpuErrchk( cudaFree(gpuIm) );
+	// gpuErrchk( cudaFree(gpuIm) );
 	for(auto s : *stats)
 	{
 		s->finalize(cudnn);

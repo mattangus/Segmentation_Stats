@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.0)
 
 project(SegStats)
 
+enable_testing()
+
 find_package(OpenCV REQUIRED)
 find_package(CUDA REQUIRED)
 #find_package(CUDNN REQUIRED)
@@ -21,3 +23,14 @@ include_directories(${OpenCV_INCLUDE_DIRS} ${CUDA_INCLUDE_DIRS})
 
 cuda_add_executable(SegStats ${MAIN_SRC})
 target_link_libraries(SegStats ${OpenCV_LIBS} ${CUDA_LIBRARIES} cudnn stdc++fs)
+
+
+set(TEST_SRC
+	"test/runTests.cu"
+)
+
+find_package(GTest REQUIRED)
+include_directories(${GTEST_INCLUDE_DIRS})
+
+cuda_add_executable(runTests ${TEST_SRC})
+target_link_libraries(runTests ${OpenCV_LIBS} ${CUDA_LIBRARIES} ${GTEST_BOTH_LIBRARIES} cudnn stdc++fs)

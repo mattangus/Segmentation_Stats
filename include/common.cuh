@@ -5,21 +5,19 @@
 #include <functional>
 #include <thread>
 
+#include "helpers.cuh"
+
 #define IND2(x, y, h, w) ((y)*(w) + (x))
 #define IND3(x, y, z, h, w, d) (((y)*(w) + (x))*(d) + (z))
 
-#define kernalBiOp(name, op)                                    \
-    template <typename T>                                       \
-    __global__                                                  \
-    void name(T* gpuA, T* gpuB, T* gpuC, int h, int w, int d)  \
-    {                                                           \
-        const int x = (blockIdx.x * blockDim.x) + threadIdx.x;  \
-        const int y = (blockIdx.y * blockDim.y) + threadIdx.y;  \
-        const int z = (blockIdx.z * blockDim.z) + threadIdx.z;  \
-        if (x >= w || y >= h || z >= d) return;                 \
-        int ind = IND3(x,y,z,h,w,d);                            \
-        gpuC[ind] = gpuA[ind] op gpuB[ind];                      \
-    }                                                           \
+#define kernalBiOp(name, op)                         \
+    template <typename T>                            \
+    __global__                                       \
+    void name(T* gpuA, T* gpuB, T* gpuC, int count)  \
+    {                                                \
+        for(int ind : CudaGridRangeX(count))         \
+            gpuC[ind] = gpuA[ind] op gpuB[ind];      \
+    }                                                \
 
 namespace cudaKernels
 {
@@ -45,62 +43,55 @@ namespace cudaKernels
 
     template<typename T1, typename T2>
     __global__
-    void castOp(T1* gpuA, T2* gpuB, int n)
+    void castOp(T1* gpuA, T2* gpuB, int count)
     {
-        const int x = (blockIdx.x * blockDim.x) + threadIdx.x;
-        if (x >= n) return;
-
-        gpuB[x] = (T2)gpuA[x];
+        for(int x : CudaGridRangeX(count))
+            gpuB[x] = (T2)gpuA[x];
     }
 
 }
 
 template <typename T>
-void add(T* gpuA, T* gpuB, T* gpuC, int h, int w, int d)
+void add(T* gpuA, T* gpuB, T* gpuC, int numElem)
 {
-    dim3 blockDim(8,8,8);
-	dim3 blocks((w/blockDim.x)+1, (h/blockDim.y)+1, (d/blockDim.z)+1); // blocks running on core
-    cudaKernels::addOp<<<blocks, blockDim>>>(gpuA, gpuB, gpuC, h, w, d);
+    int kThreadsPerBlock = 2;
+    LAUNCH(cudaKernels::addOp)(gpuA, gpuB, gpuC, numElem);
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
 }
 
 template <typename T>
-void sub(T* gpuA, T* gpuB, T* gpuC, int h, int w, int d)
+void sub(T* gpuA, T* gpuB, T* gpuC, int numElem)
 {
-    dim3 blockDim(8,8,8);
-	dim3 blocks((w/blockDim.x)+1, (h/blockDim.y)+1, (d/blockDim.z)+1); // blocks running on core
-    cudaKernels::subOp<<<blocks, blockDim>>>(gpuA, gpuB, gpuC, h, w, d);
+    int kThreadsPerBlock = 1024;
+    LAUNCH(cudaKernels::subOp)(gpuA, gpuB, gpuC, numElem);
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
 }
 
 template <typename T>
-void div(T* gpuA, T* gpuB, T* gpuC, int h, int w, int d)
+void div(T* gpuA, T* gpuB, T* gpuC, int numElem)
 {
-    dim3 blockDim(8,8,8);
-	dim3 blocks((w/blockDim.x)+1, (h/blockDim.y)+1, (d/blockDim.z)+1); // blocks running on core
-    cudaKernels::divOp<<<blocks, blockDim>>>(gpuA, gpuB, gpuC, h, w, d);
+    int kThreadsPerBlock = 1024;
+    LAUNCH(cudaKernels::divOp)(gpuA, gpuB, gpuC, numElem);
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
 }
 
 template <typename T>
-void mul(T* gpuA, T* gpuB, T* gpuC, int h, int w, int d)
+void mul(T* gpuA, T* gpuB, T* gpuC, int numElem)
 {
-    dim3 blockDim(8,8,8);
-	dim3 blocks((w/blockDim.x)+1, (h/blockDim.y)+1, (d/blockDim.z)+1); // blocks running on core
-    cudaKernels::mulOp<<<blocks, blockDim>>>(gpuA, gpuB, gpuC, h, w, d);
+    int kThreadsPerBlock = 1024;
+    LAUNCH(cudaKernels::mulOp)(gpuA, gpuB, gpuC, numElem);
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
 }
 
 template<typename T1, typename T2>
-void cast(T1* gpuA, T2* gpuB, int n)
+void castWrapper(T1* gpuA, T2* gpuB, int numElem)
 {
-    dim3 blockDim(32);
-    dim3 blocks((n/blockDim.x) + 1);
-    cudaKernels::castOp<<<blocks, blockDim>>>(gpuA, gpuB, n);
+    int kThreadsPerBlock = 1024;
+    LAUNCH(cudaKernels::castOp)(gpuA, gpuB, numElem);
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
 }
@@ -149,22 +140,30 @@ void _op(cudnnHandle_t& cudnn, T* gpuA, T* gpuB, T** gpuC, int h, int w, int d, 
     //C = op ( alpha1[0] * A, alpha2[0] * B ) + beta[0] * C
 }
 
-template<typename T>
-void _reduce(cudnnHandle_t& cudnn, T* gpuA, T** gpuB, std::vector<int>& axes, int h, int w, int d, cudnnReduceTensorOp_t reduceType)
+void setReduceDims(std::initializer_list<int> axes, int* outN, int* outH, int* outW, int* outD)
 {
-    int outH = h, outW = w, outD = d;
     for(int ax : axes)
     {
         if(ax == 0)
-            outH = 1;
+            *outN = 1;
         else if(ax == 1)
-            outW = 1;
+            *outH = 1;
         else if(ax == 2)
-            outD = 1;
+            *outW = 1;
+        else if(ax == 3)
+            *outD = 1;
     }
+}
 
-    gpuErrchk( cudaMalloc(gpuB, outH*outW*outD*sizeof(T)) );
-    gpuErrchk( cudaMemset(*gpuB, 0, outH*outW*outD*sizeof(T)) );
+template<typename T>
+void _reduce(cudnnHandle_t& cudnn, T* gpuA, T** gpuB, std::initializer_list<int> axes, int n, int h, int w, int d, cudnnReduceTensorOp_t reduceType)
+{
+    int outN = n, outH = h, outW = w, outD = d;
+    setReduceDims(axes, &outN, &outH, &outW, &outD);
+    
+
+    gpuErrchk( cudaMalloc(gpuB, outN*outH*outW*outD*sizeof(T)) );
+    gpuErrchk( cudaMemset(*gpuB, 0, outN*outH*outW*outD*sizeof(T)) );
 
     cudnnDataType_t dType = getCudnnType<T>();
 
@@ -173,14 +172,14 @@ void _reduce(cudnnHandle_t& cudnn, T* gpuA, T** gpuB, std::vector<int>& axes, in
     gpuErrchk( cudnnSetTensor4dDescriptor(inputDescriptor,
                                             CUDNN_TENSOR_NHWC,
                                             dType,
-                                            1, d, h, w) );
+                                            n, d, h, w) );
 
     cudnnTensorDescriptor_t outputDescriptor;
     gpuErrchk( cudnnCreateTensorDescriptor(&outputDescriptor) );
     gpuErrchk( cudnnSetTensor4dDescriptor(outputDescriptor,
                                             CUDNN_TENSOR_NHWC,
                                             dType,
-                                            1, outD, outH, outW) );
+                                            outN, outD, outH, outW) );
 
     cudnnReduceTensorDescriptor_t reduceTensorDesc;
     gpuErrchk( cudnnCreateReduceTensorDescriptor(&reduceTensorDesc) );
@@ -223,6 +222,8 @@ void _reduce(cudnnHandle_t& cudnn, T* gpuA, T** gpuB, std::vector<int>& axes, in
                                     &beta,
                                     outputDescriptor, *gpuB) );
 
+    gpuErrchk( cudaDeviceSynchronize() );
+
     gpuErrchk( cudnnDestroyReduceTensorDescriptor(reduceTensorDesc) );
     gpuErrchk( cudnnDestroyTensorDescriptor(inputDescriptor) );
     gpuErrchk( cudnnDestroyTensorDescriptor(outputDescriptor) );
@@ -234,35 +235,34 @@ void _reduce(cudnnHandle_t& cudnn, T* gpuA, T** gpuB, std::vector<int>& axes, in
 
 #define reduceFunc(name, type)                                                                          \
 template<typename T>                                                                                    \
-T* name(cudnnHandle_t& cudnn, T* gpuA, std::vector<int>& axes, int h, int w, int d)         \
+T* name(cudnnHandle_t& cudnn, T* gpuA, std::initializer_list<int> axes, int n, int h, int w, int d)         \
 {                                                                                                       \
     T* gpuB;                                                                                            \
-    _reduce(cudnn, gpuA, &gpuB, axes, h, w, d, type);                                                    \
+    _reduce(cudnn, gpuA, &gpuB, axes, n, h, w, d, type);                                                    \
     return gpuB;                                                                                   \
 }                                                                                                       \
 
 #define reduceFuncAll(name, type)                           \
 template<typename T>                                        \
-T* name(cudnnHandle_t& cudnn, T* gpuA, int h, int w, int d) \
+T* name(cudnnHandle_t& cudnn, T* gpuA, int n, int h, int w, int d) \
 {                                                           \
     T* gpuRes;                                         \
-    std::vector<int> axes = {0,1,2};                        \
-    _reduce(cudnn, gpuA, &gpuRes, axes, h, w, d, type);     \
+    _reduce(cudnn, gpuA, &gpuRes, {0,1,2,3}, n, h, w, d, type);     \
     return gpuRes;                                          \
 }                                                           \
 
 
-reduceFunc(reduceSum, CUDNN_REDUCE_TENSOR_ADD);
-reduceFunc(reduceMax, CUDNN_REDUCE_TENSOR_MAX);
-reduceFunc(reduceMin, CUDNN_REDUCE_TENSOR_MIN);
-reduceFunc(reduceMean, CUDNN_REDUCE_TENSOR_AVG);
-reduceFunc(reduceProd, CUDNN_REDUCE_TENSOR_MUL);
+reduceFunc(reduceSumWrapper, CUDNN_REDUCE_TENSOR_ADD);
+reduceFunc(reduceMaxWrapper, CUDNN_REDUCE_TENSOR_MAX);
+reduceFunc(reduceMinWrapper, CUDNN_REDUCE_TENSOR_MIN);
+reduceFunc(reduceMeanWrapper, CUDNN_REDUCE_TENSOR_AVG);
+reduceFunc(reduceProdWrapper, CUDNN_REDUCE_TENSOR_MUL);
 
-reduceFuncAll(reduceSumAll, CUDNN_REDUCE_TENSOR_ADD);
-reduceFuncAll(reduceMaxAll, CUDNN_REDUCE_TENSOR_MAX);
-reduceFuncAll(reduceMinAll, CUDNN_REDUCE_TENSOR_MIN);
-reduceFuncAll(reduceMeanAll, CUDNN_REDUCE_TENSOR_AVG);
-reduceFuncAll(reduceProdAll, CUDNN_REDUCE_TENSOR_MUL);
+reduceFuncAll(reduceSumAllWrapper, CUDNN_REDUCE_TENSOR_ADD);
+reduceFuncAll(reduceMaxAllWrapper, CUDNN_REDUCE_TENSOR_MAX);
+reduceFuncAll(reduceMinAllWrapper, CUDNN_REDUCE_TENSOR_MIN);
+reduceFuncAll(reduceMeanAllWrapper, CUDNN_REDUCE_TENSOR_AVG);
+reduceFuncAll(reduceProdAllWrapper, CUDNN_REDUCE_TENSOR_MUL);
 
 /*#define makeBiOp(name, op)   \
     template <typename T>    \

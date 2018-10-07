@@ -54,3 +54,58 @@ std::vector<std::string> split(const std::string &s, char delim) {
 }
 
 #define LAUNCH(kernel) kernel<<<(numElem + kThreadsPerBlock - 1) / kThreadsPerBlock, kThreadsPerBlock>>>
+
+//taken from tf (https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/util/cuda_device_functions.h)
+
+// Helper for range-based for loop using 'delta' increments.
+// Usage: see CudaGridRange?() functions below.
+template <typename T>
+class CudaGridRange {
+  struct Iterator {
+    __device__ Iterator(T index, T delta) : index_(index), delta_(delta) {}
+    __device__ T operator*() const { return index_; }
+    __device__ Iterator& operator++() {
+      index_ += delta_;
+      return *this;
+    }
+    __device__ bool operator!=(const Iterator& other) const {
+      bool greater = index_ > other.index_;
+      bool less = index_ < other.index_;
+      // Anything past an end iterator (delta_ == 0) is equal.
+      // In range-based for loops, this optimizes to 'return less'.
+      if (!other.delta_) {
+        return less;
+      }
+      if (!delta_) {
+        return greater;
+      }
+      return less || greater;
+    }
+
+   private:
+    T index_;
+    const T delta_;
+  };
+
+ public:
+  __device__ CudaGridRange(T begin, T delta, T end)
+      : begin_(begin), delta_(delta), end_(end) {}
+
+  __device__ Iterator begin() const { return Iterator{begin_, delta_}; }
+  __device__ Iterator end() const { return Iterator{end_, 0}; }
+
+ private:
+  T begin_;
+  T delta_;
+  T end_;
+};
+
+// Helper to visit indices in the range 0 <= i < count, using the x-coordinate
+// of the global thread index. That is, each index i is visited by all threads
+// with the same x-coordinate.
+// Usage: for(int i : CudaGridRangeX(count)) { visit(i); }
+template <typename T>
+__device__ CudaGridRange<T> CudaGridRangeX(T count) {
+  return CudaGridRange<T>(blockIdx.x * blockDim.x + threadIdx.x,
+                                  gridDim.x * blockDim.x, count);
+}

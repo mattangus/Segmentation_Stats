@@ -29,7 +29,10 @@ public:
         {
             pixelFreq* pixFreq = new pixelFreq();
             if(useFreq)
-                ret.push_back(std::shared_ptr<stat>(new frequency(std::shared_ptr<pixelFreq>(pixFreq), usePixelFreq)));
+            {
+                std::shared_ptr<pixelFreq> temp(pixFreq);
+                ret.push_back(std::shared_ptr<stat>(new frequency(temp, usePixelFreq)));
+            }
             else
                 ret.push_back(std::shared_ptr<stat>(pixFreq));
         }

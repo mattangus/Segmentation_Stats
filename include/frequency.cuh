@@ -21,14 +21,14 @@ private:
     std::shared_ptr<pixelFreq> pixelFreqs;
     bool usePixelFreq; // if true then pixel freqs should be saved as well
 public:
-    frequency(std::shared_ptr<pixelFreq> pixelFreqs, bool usePixelFreq) : pixelFreqs(pixelFreqs), usePixelFreq(usePixelFreq)
+    frequency(std::shared_ptr<pixelFreq>& pixelFreqs, bool usePixelFreq) : pixelFreqs(pixelFreqs), usePixelFreq(usePixelFreq)
     {
         this->name = "frequency";
     }
     ~frequency() { }
-    void accumulate(cudnnHandle_t& cudnn, unsigned char* gpuIm, int h, int w, int d)
+    void accumulate(cudnnHandle_t& cudnn, std::shared_ptr<tensorUint8>& gpuIm)
     {
-        pixelFreqs->accumulate(cudnn, gpuIm, h, w, d);
+        pixelFreqs->accumulate(cudnn, gpuIm);
     }
     void finalize(cudnnHandle_t& cudnn)
     {
@@ -38,30 +38,44 @@ public:
     {
         pixelFreqs->merge(cudnn);
 
-        double* gpuTemp;
-        int h = pixelFreqs->h;
-        int w = pixelFreqs->w;
-        int d = pixelFreqs->d;
-        int maxClass = pixelFreqs->maxClass;
-        size_t size = h * w * d * maxClass;
-        gpuErrchk( cudaMalloc(&gpuTemp, size * sizeof(double)) );
+        std::shared_ptr<tensorFloat64> gpuTemp(new tensorFloat64(pixelFreqs->gpuRes->cast<double>()));
 
-        cast(pixelFreqs->gpuRes, gpuTemp, size);
+        auto cpuTemp = gpuTemp->toCpu();
+        // for(int i = 0; i < cpuTemp.size(); i++)
+        // {
+        //     if(cpuTemp[i] != 0)
+        //     {
+        //         int a = 0;
+        //         int b = a;
+        //     }
+        // }
 
-        double* gpuMin = reduceMinAll(cudnn, gpuTemp, h, w, maxClass);
-        double* gpuMax = reduceMaxAll(cudnn, gpuTemp, h, w, maxClass);
+        // double* gpuTemp;
+        // int h = pixelFreqs->h;
+        // int w = pixelFreqs->w;
+        // int d = pixelFreqs->d;
+        // int maxClass = pixelFreqs->maxClass;
+        // size_t size = h * w * d * maxClass;
+        // gpuErrchk( cudaMalloc(&gpuTemp, size * sizeof(double)) );
 
-        std::vector<int> axes = {0,1};
-        double* gpuRes = reduceSum(cudnn, gpuTemp, axes, h, w, maxClass);
+        // cast(pixelFreqs->gpuRes, gpuTemp, size);
+        std::shared_ptr<tensorFloat64> gpuMin(new tensorFloat64(gpuTemp->reduceMinAll()));
+        std::shared_ptr<tensorFloat64> gpuMax(new tensorFloat64(gpuTemp->reduceMaxAll()));
+        // double* gpuMin = reduceMinAll(cudnn, gpuTemp, h, w, maxClass);
+        // double* gpuMax = reduceMaxAll(cudnn, gpuTemp, h, w, maxClass);
 
-        cpuRes = std::vector<double>(maxClass);
-        gpuErrchk( cudaMemcpy(&cpuRes[0], gpuRes, maxClass*sizeof(double), cudaMemcpyDeviceToHost) );
+        std::shared_ptr<tensorFloat64> gpuRes(new tensorFloat64(gpuTemp->reduceSum({0, 1, 2})));
+
+        // double* gpuRes = reduceSum(cudnn, gpuTemp, {0,1}, h, w, maxClass);
+
+        cpuRes = gpuRes->toCpu();
+        // gpuErrchk( cudaMemcpy(&cpuRes[0], gpuRes, maxClass*sizeof(double), cudaMemcpyDeviceToHost) );
 
         // std::vector<double> cpuTemp(h * w * d * maxClass);
         // gpuErrchk( cudaMemcpy(&cpuTemp[0], gpuTemp, h*w*d*maxClass*sizeof(double), cudaMemcpyDeviceToHost) );
 
-        gpuErrchk( cudaFree(gpuRes) );
-        gpuErrchk( cudaFree(gpuTemp) );
+        // gpuErrchk( cudaFree(gpuRes) );
+        // gpuErrchk( cudaFree(gpuTemp) );
     }
 
     void save(std::string outputFolder)
@@ -78,6 +92,10 @@ public:
         for(size_t i = 0; i < cpuRes.size(); i++)
         {
             csv << i << "," << cpuRes[i] << std::endl;
+            std::cout  << i << ", [";
+            for(size_t j = 0; j < 4; j++)
+                std::cout << std::hex << (int)(((unsigned char*)&cpuRes[i])[j]) << ", ";
+            std::cout << "]" << std::endl;
         }
     }
 };
