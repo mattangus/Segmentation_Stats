@@ -9,6 +9,7 @@
 
 #define IND2(x, y, h, w) ((y)*(w) + (x))
 #define IND3(x, y, z, h, w, d) (((y)*(w) + (x))*(d) + (z))
+#define IND4(i, x, y, z, n, h, w, d) ((((i)*(n) + (y))*(w) + (x))*(d) + (z))
 
 #define kernalBiOp(name, op)                         \
     template <typename T>                            \
@@ -49,6 +50,25 @@ namespace cudaKernels
         {
             gpuB[x] = (T2)(gpuA[x]);
         }
+    }
+
+    template<typename T>
+    __global__
+    void oneHotOp(T* gpuA, T* gpuB, int n, int h, int w, int maxClass, T on)
+    {
+        const int imN = (blockIdx.x * blockDim.x) + threadIdx.x;
+        const int x = (blockIdx.y * blockDim.y) + threadIdx.y;
+        const int y = (blockIdx.z * blockDim.z) + threadIdx.z;
+        // only support d = 1
+
+        if (imN >= n || x >= w || y >= h) return;
+
+        int ind = (imN*n*h + y)*w + x; //no c in input
+        unsigned char c = gpuA[ind];
+        if(c >= maxClass)
+            c = maxClass - 1;
+        ind = ((imN*n + c)*h + y)*w + x;
+        gpuB[ind] = on;
     }
 
 }
@@ -94,6 +114,16 @@ void castWrapper(T1* gpuA, T2* gpuB, int numElem)
 {
     int kThreadsPerBlock = 1024;
     LAUNCH(cudaKernels::castOp)(gpuA, gpuB, numElem);
+    gpuErrchk( cudaPeekAtLastError() );
+    gpuErrchk( cudaDeviceSynchronize() );
+}
+
+template <typename T>
+void oneHotWrapper(T* gpuA, T* gpuB, int n, int h, int w, int maxClass, T on)
+{
+    dim3 blockDim(2,16,16);
+	dim3 blocks((n/blockDim.x)+1, (w/blockDim.y)+1, (h/blockDim.z)+1);
+    cudaKernels::oneHotOp<<<blocks, blockDim>>>(gpuA, gpuB, n, h, w, maxClass, on);
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );
 }

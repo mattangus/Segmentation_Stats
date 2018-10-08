@@ -22,6 +22,8 @@
 #include "statManager.hpp"
 #include "tensor.cuh"
 
+#include "zupply.hpp"
+
 namespace fs = std::experimental::filesystem;
 
 bool hasEnding (std::string const &fullString, std::string const &ending) {
@@ -47,7 +49,7 @@ std::vector<std::string> GetImagesToProcess(std::string& inputPath, std::string&
 	return ret;
 }
 
-void processLoop(std::vector<std::string>* toProcess, std::string* base_path, int device, std::vector<std::shared_ptr<stat>>* stats)
+void processLoop(std::vector<std::string>* toProcess, std::string* base_path, int device, std::vector<std::shared_ptr<stat>>* stats, zz::log::ProgBar* pBar)
 {
 	//each process loop has it's own thread!
 	cudnnHandle_t cudnn;
@@ -57,7 +59,7 @@ void processLoop(std::vector<std::string>* toProcess, std::string* base_path, in
 	gpuErrchk( cudaPeekAtLastError() );
 	gpuErrchk( cudaDeviceSynchronize() );
 
-	std::shared_ptr<tensorUint8> gpuIm(new tensor<unsigned char>(cudnn));
+	tensorUint8 gpuIm(cudnn);
 	bool inited = false;
 
 	
@@ -81,18 +83,20 @@ void processLoop(std::vector<std::string>* toProcess, std::string* base_path, in
 			// int h, w;
 			// h = im.rows;
 			// w = im.cols;
-			gpuIm->setDims(1, im.rows, im.cols, 1, true);
+			gpuIm.setDims(1, im.rows, im.cols, 1, true);
 			//gpuErrchk( cudaMalloc((void**) &gpuIm, imSize) );
 			inited = true;
 		}
 
 		// gpuErrchk( cudaMemcpy(gpuIm, bgr[0].ptr(), imSize, cudaMemcpyHostToDevice) );
-		gpuIm->toGpu(bgr[0].ptr(), CUDNN_TENSOR_NHWC);
+		gpuIm.toGpu(bgr[0].ptr(), CUDNN_TENSOR_NHWC);
 
 		for(auto s : *stats)
 		{
-			s->accumulate(cudnn, gpuIm);
+			s->accumulate(cudnn, gpuIm, curPath);
 		}
+
+		pBar->step();
 
 		// std::string outImgPath = std::regex_replace(curPath, std::regex(base_path), output_path);
 		// processImage(curPath, outImgPath, "fake", 20, kernel);
@@ -148,6 +152,7 @@ int main( int argc, char** argv )
 	std::string base_path, depth_path, output_path;
 	std::string ending = "png";
 	int numThread = 8;
+	int maxClass = 20;
 	std::vector<int> availDevice = {0}; //static max number because this uses a lot of GPU, so only one per GPU
 	statManager manager;
 	for (int i = 0; i < argc; i++)
@@ -168,20 +173,35 @@ int main( int argc, char** argv )
 			manager.addFrequency();
 		if (strcmp(argv[i], "-p") == 0)
 			manager.addPixelFrequency();
+		if (strcmp(argv[i], "-a") == 0)
+			manager.addAll();
+		if (strcmp(argv[i], "-m") == 0)
+			manager.addImageFrequency();
+		if (strcmp(argv[i], "-c") == 0)
+			maxClass = atoi(argv[i+1]);
 	}
 
 	std::cout << "base path: '" << base_path << "'" << std::endl;
 	std::cout << "output path: '" << output_path << "'" << std::endl;
 	std::cout << "num thread: " << numThread << std::endl;
+	std::cout << "max Classes: " << maxClass << std::endl;
 	std::cout << "using gpus (";
 	for(auto& v : availDevice)
 		std::cout << v << ", ";
 	std::cout << ")" << std::endl;
 
-	std::vector<std::shared_ptr<stat>> stats = manager.getStatList();
+	std::vector<std::shared_ptr<stat>> stats = manager.getStatList(maxClass);
 
-	std::vector<std::string> toProcess = GetImagesToProcess(base_path, ending);
+	std::cout << "finding images to process" << std::endl;
 	auto start = std::chrono::steady_clock::now();
+	std::vector<std::string> toProcess = GetImagesToProcess(base_path, ending);
+	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
+	float sec = ((float)duration.count()/1000.0f);
+	std::cout << "found " << toProcess.size() << " images in " << sec << " seconds." << std::endl;
+	
+	start = std::chrono::steady_clock::now();
+
+	zz::log::ProgBar pBar(toProcess.size());
 
 	if(numThread > 1)
 	{
@@ -190,7 +210,7 @@ int main( int argc, char** argv )
 		for(int i = 0; i < numThread && i < (int)splitVals.size(); i++)
 		{
 			int d = availDevice[i % availDevice.size()];
-			threads.push_back(std::thread(processLoop, &splitVals[i], &base_path, d, &stats));
+			threads.push_back(std::thread(processLoop, &splitVals[i], &base_path, d, &stats, &pBar));
 		}
 
 		for(std::thread& t : threads)
@@ -200,7 +220,7 @@ int main( int argc, char** argv )
 	}
 	else if(toProcess.size() > 0)
 	{
-		processLoop(&toProcess, &base_path, availDevice[0], &stats);
+		processLoop(&toProcess, &base_path, availDevice[0], &stats, &pBar);
 	}
 	
 	//main thread doesnt have a cudnn handle
@@ -212,9 +232,11 @@ int main( int argc, char** argv )
 		s->merge(cudnn);
 	}
 
-	auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
-	float sec = ((float)duration.count()/1000.0f);
+	duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
+	sec = ((float)duration.count()/1000.0f);
 	std::cout << "finished in " << sec << " seconds (" << (toProcess.size()/sec) << " im/sec)" << std::endl;
+
+	fs::create_directories(output_path);
 
 	start = std::chrono::steady_clock::now();
 	for(auto s : stats)
@@ -224,6 +246,7 @@ int main( int argc, char** argv )
 		std::cout << "==================================" << std::endl;
 	}
 	duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
+	sec = ((float)duration.count()/1000.0f);
 	std::cout << "finished in " << sec << " seconds" << std::endl;
 	std::cout << std::endl;
 }

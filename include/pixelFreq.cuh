@@ -5,9 +5,9 @@
 #include "common.cuh"
 #include "tensor.cuh"
 #include "types.cuh"
+#include "thread_map.hpp"
 
 #include <cuda.h>
-#include <mutex>
 #include <experimental/filesystem>
 #include <sstream>
 
@@ -37,14 +37,13 @@ namespace cudaKernels
 class pixelFreq : public stat
 {
 private:
-    std::unordered_map<std::thread::id, std::shared_ptr<tensorInt64>> gpuFreqs;
-    std::mutex writeLock;
+    thread_map<std::shared_ptr<tensorInt64>> gpuFreqs;
     std::vector<long long> cpuRes;
 public:
     int h,w,d;
-    static const int maxClass = 20;
+    const int maxClass;
     std::shared_ptr<tensorInt64> gpuRes;
-    pixelFreq()
+    pixelFreq(int maxClass) : maxClass(maxClass)
     {
         this->name = "pixelFreq";
     }
@@ -56,27 +55,25 @@ public:
         //     gpuErrchk( cudaFree(f.second->data) );
         
     }
-    void accumulate(cudnnHandle_t& cudnn, std::shared_ptr<tensorUint8>& gpuIm)
+    void accumulate(cudnnHandle_t& cudnn, tensorUint8& gpuIm, std::string& path)
     {
-        std::thread::id tId = std::this_thread::get_id();
-        if(gpuIm->d != 1)
+        if(gpuIm.d != 1)
         {
-            throw std::runtime_error("Cannot accumulate frequency with more than 1 depth dim. got: " + gpuIm->d);
+            throw std::runtime_error("Cannot accumulate frequency with more than 1 depth dim. got: " + gpuIm.d);
         }
-        if(gpuFreqs.count(tId) <= 0)
+        if(!gpuFreqs.hasData())
         {
-            this->h = gpuIm->h; this->w = gpuIm->w; this->d = gpuIm->d;
+            this->h = gpuIm.h; this->w = gpuIm.w; this->d = gpuIm.d;
             std::shared_ptr<tensorInt64> tempGpu(new tensorInt64(cudnn, 1, h, w, maxClass, true));
             tempGpu->set(0);
-            std::lock_guard<std::mutex> guard(writeLock);
-            gpuFreqs[tId] = tempGpu;
+            gpuFreqs.set(tempGpu);
         }
-        if(!gpuIm->isCompatable(1,h,w,d))
+        if(!gpuIm.isCompatable(1,h,w,d))
             throw std::runtime_error("Cannot handle different sized images");
         
         dim3 blockDim(16,16);
 		dim3 blocks((w/blockDim.x)+1, (h/blockDim.y)+1); // blocks running on core
-        cudaKernels::accPixelFreq<<<blocks, blockDim>>>(gpuIm->getData(), gpuFreqs[tId]->getData(), 1, h, w, maxClass);
+        cudaKernels::accPixelFreq<<<blocks, blockDim>>>(gpuIm.getData(), gpuFreqs.get()->getData(), 1, h, w, maxClass);
 		gpuErrchk( cudaPeekAtLastError() );
 		gpuErrchk( cudaDeviceSynchronize() );
     }
@@ -88,9 +85,9 @@ public:
     {
         gpuRes = std::shared_ptr<tensorInt64>(new tensorInt64(cudnn, 1, h, w, maxClass, true));
         gpuRes->set(0);
-        for (auto & it : gpuFreqs) {
+        for (auto & it : gpuFreqs.toList()) {
             //add(gpuRes->data, it.second->data, gpuRes->data, h, w, maxClass);
-            *gpuRes += *(it.second);
+            *gpuRes += *(it);
         }
         cpuRes = gpuRes->toCpu();
     }

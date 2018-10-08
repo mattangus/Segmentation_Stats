@@ -14,7 +14,7 @@ protected:
     std::string name;
 public:
     virtual ~stat() { }
-    virtual void accumulate(cudnnHandle_t& cudnn, std::shared_ptr<tensorUint8>& gpuObj) = 0;
+    virtual void accumulate(cudnnHandle_t& cudnn, tensorUint8& gpuObj, std::string& path) = 0;
     // void accumulate(unsigned char* d_obj, int h, int w, int d)
     // {
     //     accumulate(d_obj, int h, int w, int d, 0);

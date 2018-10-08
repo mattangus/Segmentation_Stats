@@ -312,4 +312,15 @@ public:
         castWrapper(data, ret.data, numElements());
         return ret;
     }
+
+    tensor<T> oneHot(int numClass, T on = 1, T off = 0)
+    {
+        if(d != 1)
+            throw std::runtime_error("5D tensor not implemented");
+
+        tensor<T> ret(cudnn, n, h, w, numClass, true);
+        ret.set(off);
+        oneHotWrapper(data, ret.data, n, h, w, numClass, on);
+        return ret;        
+    }
 };

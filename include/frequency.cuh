@@ -26,9 +26,9 @@ public:
         this->name = "frequency";
     }
     ~frequency() { }
-    void accumulate(cudnnHandle_t& cudnn, std::shared_ptr<tensorUint8>& gpuIm)
+    void accumulate(cudnnHandle_t& cudnn, tensorUint8& gpuIm, std::string& path)
     {
-        pixelFreqs->accumulate(cudnn, gpuIm);
+        pixelFreqs->accumulate(cudnn, gpuIm, path);
     }
     void finalize(cudnnHandle_t& cudnn)
     {
@@ -62,8 +62,8 @@ public:
         std::cout << "class,count" << std::endl;
         for(size_t i = 0; i < cpuRes.size(); i++)
         {
-            csv << std::fixed << i << "," << cpuRes[i] << std::endl;
-            std::cout << std::fixed << i << "," << cpuRes[i] << std::endl;
+            csv << i << "," << cpuRes[i] << std::endl;
+            std::cout << i << "," << cpuRes[i] << std::endl;
             // std::cout  << i << ", [";
             // for(size_t j = 0; j < 4; j++)
             //     std::cout << std::hex << (int)(((unsigned char*)&cpuRes[i])[j]) << ", ";
