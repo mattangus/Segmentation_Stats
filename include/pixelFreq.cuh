@@ -69,12 +69,12 @@ public:
             std::lock_guard<std::mutex> guard(writeLock);
             gpuFreqs[tId] = tempGpu;
         }
-        if(this->h != gpuIm->h || this->w != gpuIm->w || this->d != gpuIm->d)
+        if(!gpuIm->isCompatable(1,h,w,d))
             throw std::runtime_error("Cannot handle different sized images");
         
         dim3 blockDim(16,16);
 		dim3 blocks((w/blockDim.x)+1, (h/blockDim.y)+1); // blocks running on core
-        cudaKernels::accPixelFreq<<<blocks, blockDim>>>(gpuIm->data, gpuFreqs[tId]->data, h, w, d, maxClass);
+        cudaKernels::accPixelFreq<<<blocks, blockDim>>>(gpuIm->getData(), gpuFreqs[tId]->getData(), h, w, d, maxClass);
 		gpuErrchk( cudaPeekAtLastError() );
 		gpuErrchk( cudaDeviceSynchronize() );
     }

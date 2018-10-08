@@ -46,7 +46,11 @@ namespace cudaKernels
     void castOp(T1* gpuA, T2* gpuB, int count)
     {
         for(int x : CudaGridRangeX(count))
-            gpuB[x] = (T2)gpuA[x];
+        {
+            gpuB[x] = (T2)(gpuA[x]);
+            if(x > 10 && x < 100)
+                printf("%d\n", x);
+        }
     }
 
 }
@@ -54,7 +58,7 @@ namespace cudaKernels
 template <typename T>
 void add(T* gpuA, T* gpuB, T* gpuC, int numElem)
 {
-    int kThreadsPerBlock = 2;
+    int kThreadsPerBlock = 1024;
     LAUNCH(cudaKernels::addOp)(gpuA, gpuB, gpuC, numElem);
     gpuErrchk( cudaPeekAtLastError() );
     gpuErrchk( cudaDeviceSynchronize() );

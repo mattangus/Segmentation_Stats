@@ -87,7 +87,7 @@ void processLoop(std::vector<std::string>* toProcess, std::string* base_path, in
 		}
 
 		// gpuErrchk( cudaMemcpy(gpuIm, bgr[0].ptr(), imSize, cudaMemcpyHostToDevice) );
-		gpuIm->toGpu(bgr[0].ptr());
+		gpuIm->toGpu(bgr[0].ptr(), CUDNN_TENSOR_NHWC);
 
 		for(auto s : *stats)
 		{

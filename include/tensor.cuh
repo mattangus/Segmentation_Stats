@@ -2,18 +2,88 @@
 
 #include "helpers.cuh"
 #include "common.cuh"
+#include "transform.cuh"
 
 #include <cuda.h>
 #include <cudnn.h>
+
+#define CUDNN_CALL(expr)    \
+    NHWCToNCHW();           \
+    (expr);                 \
+    NCHWToNHWC();           \
 
 template<typename T>
 class tensor
 {
 private:
-public:
+    // A GPU helper functor that converts NHWC TensorFlow data format to
+    // NCHW format that is accepted by Cudnn.
+    tensor<T> NHWCToNCHW(bool swapMem = true) {
+        Dimension<3> combined_dims;
+        combined_dims[0] = n;  // N (batch)
+        combined_dims[1] = h * w;  // spatial dimensions (HW)
+        combined_dims[2] = d;  // C (channels)
+
+        tensor<T> out(cudnn, n, h, w, d, true);
+
+        RunSwapDimension1And2InTensor3(data, combined_dims, out.data, numElements());
+
+        if(swapMem)
+        {
+            //swap pointers and let destructor dealloc
+            std::swap(out.data, data);
+            // T* temp = out.data;
+            // out.data = data;
+            // data = temp;
+        }
+        return out;
+    }
+
+    // A GPU helper functor that converts NCHW Cudnn data format to NHWC TensorFlow
+    // Format.
+    tensor<T> NCHWToNHWC(bool swapMem = true) {
+        Dimension<3> combined_dims;
+        combined_dims[0] = n;  // N (batch)
+        combined_dims[1] = d;  // C (channel)
+        combined_dims[2] = h * w;  // spatial dimensions (HW)
+
+        tensor<T> out(cudnn, n, h, w, d, true);
+
+        RunSwapDimension1And2InTensor3(data, combined_dims, out.data, numElements());
+
+        if(swapMem)
+        {
+            //swap pointers and let destructor dealloc
+            std::swap(out.data, data);
+            // T* temp = out.data;
+            // out.data = data;
+            // data = temp;
+        }
+        return out;
+    }
+
+    void handleFormat(cudnnTensorFormat_t format)
+    {
+        if(format == CUDNN_TENSOR_NHWC)
+            NHWCToNCHW();
+        else if(format != CUDNN_TENSOR_NCHW)
+            throw std::runtime_error("Tensor format must be either 'NHWC' or 'NCHW'");
+    }
+
+    tensor(cudnnHandle_t& cudnn, T* data, int n, int h, int w, int d)
+        : tensor(cudnn, data, CUDNN_TENSOR_NCHW, n, h, w, d)
+    {
+        
+    }
+    
+    //give access to private functions of other datatypes
+    template<class U>
+    friend class tensor;
+
     T* data = nullptr;
-    int n, h, w, d;
+public:
     cudnnHandle_t cudnn;
+    int n, h, w, d;
 
     tensor()
     {
@@ -27,9 +97,10 @@ public:
 
     }
 
-    tensor(cudnnHandle_t& cudnn, T* data, int n, int h, int w, int d) : cudnn(cudnn), data(data), n(n), h(h), w(w), d(d)
+    tensor(cudnnHandle_t& cudnn, T* data, cudnnTensorFormat_t format, int n, int h, int w, int d)
+        : cudnn(cudnn), data(data), n(n), h(h), w(w), d(d)
     {
-
+        handleFormat(format);
     }
 
     tensor(cudnnHandle_t& cudnn, int n, int h, int w, int d, bool alloc) : tensor(cudnn,n,h,w,d)
@@ -48,6 +119,11 @@ public:
     ~tensor()
     {
         gpuErrchk( cudaFree(data) );
+    }
+
+    T* getData()
+    {
+        return data;
     }
 
     void setDims(int n, int h, int w, int d)
@@ -90,20 +166,27 @@ public:
     std::vector<T> toCpu()
     {
         std::vector<T> cpuRes(numElements());
-        gpuErrchk( cudaMemcpy(&cpuRes[0], data, getSize(), cudaMemcpyDeviceToHost) );
+        tensor<T> out = NCHWToNHWC(false); //change format for cpu, and don't swap pointers
+        gpuErrchk( cudaMemcpy(&cpuRes[0], out.data, getSize(), cudaMemcpyDeviceToHost) );
         return cpuRes;
     }
 
-    void toGpu(T* cpuData)
+    void toGpu(T* cpuData, cudnnTensorFormat_t format)
     {
         gpuErrchk( cudaMemcpy(data, cpuData, getSize(), cudaMemcpyHostToDevice) );
+        handleFormat(format);
     }
 
-    void toGpu(std::vector<T> cpuData)
+    void toGpu(std::vector<T> cpuData, cudnnTensorFormat_t format)
     {
-        if(numElements() != cpuData.size())
+        if((size_t)numElements() != cpuData.size())
             throw std::runtime_error("tensor, data size mismatch");
-        toGpu(&cpuData[0]);
+        toGpu(&cpuData[0], format);
+    }
+
+    bool isCompatable(int n, int h, int w, int d)
+    {
+        return (n == this->n && h == this->h && w == this->w && d == this->d);
     }
 
     tensor<T> operator+(const tensor<T>& other)

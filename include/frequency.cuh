@@ -38,44 +38,27 @@ public:
     {
         pixelFreqs->merge(cudnn);
 
-        std::shared_ptr<tensorFloat64> gpuTemp(new tensorFloat64(pixelFreqs->gpuRes->cast<double>()));
+        tensorFloat64 gpuTemp = pixelFreqs->gpuRes->cast<double>();
 
-        auto cpuTemp = gpuTemp->toCpu();
-        // for(int i = 0; i < cpuTemp.size(); i++)
-        // {
-        //     if(cpuTemp[i] != 0)
-        //     {
-        //         int a = 0;
-        //         int b = a;
-        //     }
-        // }
+        std::vector<double> cpuTemp = gpuTemp.toCpu();
+        double maxV = -1000000;
+        for(int i = 0; i < (int)cpuTemp.size(); i++)
+        {
+            if(cpuTemp[i] > maxV)
+            {
+                maxV = cpuTemp[i];
+                std::cout << maxV << std::endl;
+            }
+        }
+        
+        tensorFloat64 gpuMin = gpuTemp.reduceMinAll();
+        tensorFloat64 gpuMax = gpuTemp.reduceMaxAll();
+        std::vector<double> cpuMax = gpuMax.toCpu();
+        std::vector<double> cpuMin = gpuMin.toCpu();
 
-        // double* gpuTemp;
-        // int h = pixelFreqs->h;
-        // int w = pixelFreqs->w;
-        // int d = pixelFreqs->d;
-        // int maxClass = pixelFreqs->maxClass;
-        // size_t size = h * w * d * maxClass;
-        // gpuErrchk( cudaMalloc(&gpuTemp, size * sizeof(double)) );
+        tensorFloat64 gpuRes = gpuTemp.reduceSum({0, 1, 2});
 
-        // cast(pixelFreqs->gpuRes, gpuTemp, size);
-        std::shared_ptr<tensorFloat64> gpuMin(new tensorFloat64(gpuTemp->reduceMinAll()));
-        std::shared_ptr<tensorFloat64> gpuMax(new tensorFloat64(gpuTemp->reduceMaxAll()));
-        // double* gpuMin = reduceMinAll(cudnn, gpuTemp, h, w, maxClass);
-        // double* gpuMax = reduceMaxAll(cudnn, gpuTemp, h, w, maxClass);
-
-        std::shared_ptr<tensorFloat64> gpuRes(new tensorFloat64(gpuTemp->reduceSum({0, 1, 2})));
-
-        // double* gpuRes = reduceSum(cudnn, gpuTemp, {0,1}, h, w, maxClass);
-
-        cpuRes = gpuRes->toCpu();
-        // gpuErrchk( cudaMemcpy(&cpuRes[0], gpuRes, maxClass*sizeof(double), cudaMemcpyDeviceToHost) );
-
-        // std::vector<double> cpuTemp(h * w * d * maxClass);
-        // gpuErrchk( cudaMemcpy(&cpuTemp[0], gpuTemp, h*w*d*maxClass*sizeof(double), cudaMemcpyDeviceToHost) );
-
-        // gpuErrchk( cudaFree(gpuRes) );
-        // gpuErrchk( cudaFree(gpuTemp) );
+        cpuRes = gpuRes.toCpu();
     }
 
     void save(std::string outputFolder)
@@ -92,10 +75,11 @@ public:
         for(size_t i = 0; i < cpuRes.size(); i++)
         {
             csv << i << "," << cpuRes[i] << std::endl;
-            std::cout  << i << ", [";
-            for(size_t j = 0; j < 4; j++)
-                std::cout << std::hex << (int)(((unsigned char*)&cpuRes[i])[j]) << ", ";
-            std::cout << "]" << std::endl;
+            std::cout << i << "," << cpuRes[i] << std::endl;
+            // std::cout  << i << ", [";
+            // for(size_t j = 0; j < 4; j++)
+            //     std::cout << std::hex << (int)(((unsigned char*)&cpuRes[i])[j]) << ", ";
+            // std::cout << "]" << std::endl;
         }
     }
 };
