@@ -48,8 +48,6 @@ namespace cudaKernels
         for(int x : CudaGridRangeX(count))
         {
             gpuB[x] = (T2)(gpuA[x]);
-            if(x > 10 && x < 100)
-                printf("%d\n", x);
         }
     }
 
@@ -174,14 +172,14 @@ void _reduce(cudnnHandle_t& cudnn, T* gpuA, T** gpuB, std::initializer_list<int>
     cudnnTensorDescriptor_t inputDescriptor;
     gpuErrchk( cudnnCreateTensorDescriptor(&inputDescriptor) );
     gpuErrchk( cudnnSetTensor4dDescriptor(inputDescriptor,
-                                            CUDNN_TENSOR_NHWC,
+                                            CUDNN_TENSOR_NCHW,
                                             dType,
                                             n, d, h, w) );
 
     cudnnTensorDescriptor_t outputDescriptor;
     gpuErrchk( cudnnCreateTensorDescriptor(&outputDescriptor) );
     gpuErrchk( cudnnSetTensor4dDescriptor(outputDescriptor,
-                                            CUDNN_TENSOR_NHWC,
+                                            CUDNN_TENSOR_NCHW,
                                             dType,
                                             outN, outD, outH, outW) );
 

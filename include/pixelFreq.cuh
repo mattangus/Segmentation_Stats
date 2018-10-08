@@ -16,7 +16,7 @@ namespace fs = std::experimental::filesystem;
 namespace cudaKernels
 {
     __global__
-    void accPixelFreq(unsigned char* gpu_im, long long* gpuFreqs , int h, int w, int d, int maxClass)
+    void accPixelFreq(unsigned char* gpu_im, long long* gpuFreqs, int n, int h, int w, int maxClass)
     {
         const int x = (blockIdx.x * blockDim.x) + threadIdx.x;
         const int y = (blockIdx.y * blockDim.y) + threadIdx.y;
@@ -25,10 +25,12 @@ namespace cudaKernels
         if (x >= w || y >= h) return;
 
         int ind = (y*w + x);
-        unsigned char cls = gpu_im[ind];
-        ind = (y*w + x)*maxClass;
-        if(cls < maxClass)
-            gpuFreqs[ind + cls]++;
+        unsigned char c = gpu_im[ind];
+        if(c >= maxClass)
+            c = maxClass - 1;
+        ind = (c*h + y)*w + x;
+        gpuFreqs[ind]++;
+        
     }
 } //cudaKernels
 
@@ -64,7 +66,7 @@ public:
         if(gpuFreqs.count(tId) <= 0)
         {
             this->h = gpuIm->h; this->w = gpuIm->w; this->d = gpuIm->d;
-            std::shared_ptr<tensorInt64> tempGpu(new tensorInt64(cudnn, h, w, d, maxClass, true));
+            std::shared_ptr<tensorInt64> tempGpu(new tensorInt64(cudnn, 1, h, w, maxClass, true));
             tempGpu->set(0);
             std::lock_guard<std::mutex> guard(writeLock);
             gpuFreqs[tId] = tempGpu;
@@ -74,7 +76,7 @@ public:
         
         dim3 blockDim(16,16);
 		dim3 blocks((w/blockDim.x)+1, (h/blockDim.y)+1); // blocks running on core
-        cudaKernels::accPixelFreq<<<blocks, blockDim>>>(gpuIm->getData(), gpuFreqs[tId]->getData(), h, w, d, maxClass);
+        cudaKernels::accPixelFreq<<<blocks, blockDim>>>(gpuIm->getData(), gpuFreqs[tId]->getData(), 1, h, w, maxClass);
 		gpuErrchk( cudaPeekAtLastError() );
 		gpuErrchk( cudaDeviceSynchronize() );
     }
@@ -84,7 +86,7 @@ public:
     }
     void merge(cudnnHandle_t& cudnn)
     {
-        gpuRes = std::shared_ptr<tensorInt64>(new tensorInt64(cudnn, h, w, d, maxClass, true));
+        gpuRes = std::shared_ptr<tensorInt64>(new tensorInt64(cudnn, 1, h, w, maxClass, true));
         gpuRes->set(0);
         for (auto & it : gpuFreqs) {
             //add(gpuRes->data, it.second->data, gpuRes->data, h, w, maxClass);

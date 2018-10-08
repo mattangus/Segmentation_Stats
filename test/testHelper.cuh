@@ -8,11 +8,11 @@
 
 #include "helpers.cuh"
 
-static const std::string pass = "Test passed: ";
+static const std::string pass = "Test passed";
 static const std::string fail = "Test failed: ";
 
 template<typename T>
-void expect(std::vector<T> ans, std::initializer_list<T> expected, std::string name)
+void expect(std::vector<T> ans, std::initializer_list<T> expected, std::string name, T eps = 0)
 {
     int failCount = 0;
     std::cout << "============= " << name << " =============" << std::endl;
@@ -23,7 +23,7 @@ void expect(std::vector<T> ans, std::initializer_list<T> expected, std::string n
     }
     for(size_t i = 0; i < ans.size(); i++)
     {
-        if(ans[i] != expected.begin()[i])
+        if(std::abs(ans[i] - expected.begin()[i]) > eps)
         {
             std::cout << fail << " incorrect response at " << i << " -- expected " << expected.begin()[i] << " answer " << ans[i] << std::endl;
             failCount++;

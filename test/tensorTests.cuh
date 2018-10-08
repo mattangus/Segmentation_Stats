@@ -167,10 +167,131 @@ namespace tensorTests
             expect(cpuOut, {20.0f, 25.0f}, "Reduce Sum 2d Number");
         }
     }
+
+    void testReduceMax2D()
+    {
+        {
+            std::vector<float> in = {0,1,2,3,4,5,6,7,8,9};
+            tensor<float> gpuIn(cudnn, 1, 1, 2, 5, true);
+            gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
+
+            auto temp = gpuIn.reduceMax({3});
+            std::vector<float> cpuOut = temp.toCpu();
+
+            expect(cpuOut, {4.0f, 9.0f}, "Reduce Max 2d Depth");
+        }
+
+        {
+            std::vector<float> in = {0,1,2,3,4,5,6,7,8,9};
+            tensor<float> gpuIn(cudnn, 1, 1, 5, 2, true);
+            gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
+
+            auto temp = gpuIn.reduceMax({2});
+            std::vector<float> cpuOut = temp.toCpu();
+
+            expect(cpuOut, {8.0f, 9.0f}, "Reduce Max 2d Depth");
+        }
+
+        {
+            std::vector<float> in(1024*2048*3);
+            float max = -10000;
+            for(int i = 0; i < (int)in.size(); i++)
+            {
+                in[i] = (int)(i/1000);
+                if(in[i] > max)
+                    max = in[i];
+            }
+            tensor<float> gpuIn(cudnn, 1, 1024, 2048, 3, true);
+            gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
+
+            auto temp = gpuIn.reduceMaxAll();
+            std::vector<float> cpuOut = temp.toCpu();
+
+            expect(cpuOut, {max}, "Reduce Max Large");
+        }
+
+        {
+            std::vector<float> in(1024*2048*50);
+            float max = -10000;
+            for(int i = 0; i < (int)in.size(); i++)
+            {
+                if(i % (1024*256*10) == 0)
+                {
+                    in[i] = (int)(i/10000);
+                    if(in[i] > max)
+                        max = in[i];
+                }
+            }
+            tensor<float> gpuIn(cudnn, 1, 1024, 2048, 50, true);
+            gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
+
+            auto temp = gpuIn.reduceMaxAll();
+            std::vector<float> cpuOut = temp.toCpu();
+
+            expect(cpuOut, {max}, "Reduce Max Large Sparse");
+        }
+
+        {
+            std::vector<double> in(1024*2048*50);
+            double max = -10000;
+            for(int i = 0; i < (int)in.size(); i++)
+            {
+                if(i % (1024*256*10) == 0)
+                {
+                    in[i] = (int)(i/10000);
+                    if(in[i] > max)
+                        max = in[i];
+                }
+            }
+            tensor<double> gpuIn(cudnn, 1, 1024, 2048, 50, true);
+            gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
+
+            auto temp = gpuIn.reduceMaxAll();
+            std::vector<double> cpuOut = temp.toCpu();
+
+            expect(cpuOut, {max}, "Reduce Max Large Sparse Double");
+
+        }
+
+        {
+            std::vector<double> in(10*10*3);
+            double max = -10000;
+            for(int i = 0; i < (int)in.size(); i++)
+            {
+                in[i] = (int)(i/2);
+                if(in[i] > max)
+                    max = in[i];
+            }
+            tensor<double> gpuIn(cudnn, 1, 10, 10, 3, true);
+            gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
+
+            auto temp = gpuIn.reduceMaxAll();
+            std::vector<double> cpuOut = temp.toCpu();
+
+            expect(cpuOut, {max}, "Reduce Max Double");
+
+            double scan = cpuOut[0];
+            std::cout << "answer: " << "[";
+            for(int i = 0; i < sizeof(double); i++)
+            {
+                std::cout << std::hex << (int)((unsigned char*)(&scan))[i] << ",";
+            }
+            std::cout << "]" << std::endl;
+
+            scan = max;
+            std::cout << "expected: " << "[";
+            for(int i = 0; i < sizeof(double); i++)
+            {
+                std::cout << std::hex << (int)((unsigned char*)(&scan))[i] << ",";
+            }
+            std::cout << "]" << std::endl;
+        }
+    }
     
     void runAllTests()
     {
         testReduceSum1D();
         testReduceSum2D();
+        testReduceMax2D();
     }
 };

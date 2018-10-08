@@ -84,7 +84,7 @@ private:
 public:
     cudnnHandle_t cudnn;
     int n, h, w, d;
-
+    cudnnTensorFormat_t format;
     tensor()
     {
 
