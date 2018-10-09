@@ -236,8 +236,8 @@ void _reduce(cudnnHandle_t& cudnn, T* gpuA, T** gpuB, std::initializer_list<int>
                                                 outputDescriptor,
                                                 &indicesSize) );
 
-    float alpha = 1;
-    float beta = 0;
+    T alpha = 1;
+    T beta = 0;
 
     void* gpuWorkspace;
     gpuErrchk( cudaMalloc(&gpuWorkspace, workspaceSize) );

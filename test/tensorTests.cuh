@@ -192,66 +192,66 @@ namespace tensorTests
             expect(cpuOut, {8.0f, 9.0f}, "Reduce Max 2d Depth");
         }
 
-        {
-            std::vector<float> in(1024*2048*3);
-            float max = -10000;
-            for(int i = 0; i < (int)in.size(); i++)
-            {
-                in[i] = (int)(i/1000);
-                if(in[i] > max)
-                    max = in[i];
-            }
-            tensor<float> gpuIn(cudnn, 1, 1024, 2048, 3, true);
-            gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
+        // {
+        //     std::vector<float> in(1024*2048*3);
+        //     float max = -10000;
+        //     for(int i = 0; i < (int)in.size(); i++)
+        //     {
+        //         in[i] = (int)(i/1000);
+        //         if(in[i] > max)
+        //             max = in[i];
+        //     }
+        //     tensor<float> gpuIn(cudnn, 1, 1024, 2048, 3, true);
+        //     gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
-            auto temp = gpuIn.reduceMaxAll();
-            std::vector<float> cpuOut = temp.toCpu();
+        //     auto temp = gpuIn.reduceMaxAll();
+        //     std::vector<float> cpuOut = temp.toCpu();
 
-            expect(cpuOut, {max}, "Reduce Max Large");
-        }
+        //     expect(cpuOut, {max}, "Reduce Max Large");
+        // }
 
-        {
-            std::vector<float> in(1024*2048*50);
-            float max = -10000;
-            for(int i = 0; i < (int)in.size(); i++)
-            {
-                if(i % (1024*256*10) == 0)
-                {
-                    in[i] = (int)(i/10000);
-                    if(in[i] > max)
-                        max = in[i];
-                }
-            }
-            tensor<float> gpuIn(cudnn, 1, 1024, 2048, 50, true);
-            gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
+        // {
+        //     std::vector<float> in(1024*2048*50);
+        //     float max = -10000;
+        //     for(int i = 0; i < (int)in.size(); i++)
+        //     {
+        //         if(i % (1024*256*10) == 0)
+        //         {
+        //             in[i] = (int)(i/10000);
+        //             if(in[i] > max)
+        //                 max = in[i];
+        //         }
+        //     }
+        //     tensor<float> gpuIn(cudnn, 1, 1024, 2048, 50, true);
+        //     gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
-            auto temp = gpuIn.reduceMaxAll();
-            std::vector<float> cpuOut = temp.toCpu();
+        //     auto temp = gpuIn.reduceMaxAll();
+        //     std::vector<float> cpuOut = temp.toCpu();
 
-            expect(cpuOut, {max}, "Reduce Max Large Sparse");
-        }
+        //     expect(cpuOut, {max}, "Reduce Max Large Sparse");
+        // }
 
-        {
-            std::vector<double> in(1024*2048*50);
-            double max = -10000;
-            for(int i = 0; i < (int)in.size(); i++)
-            {
-                if(i % (1024*256*10) == 0)
-                {
-                    in[i] = (int)(i/10000);
-                    if(in[i] > max)
-                        max = in[i];
-                }
-            }
-            tensor<double> gpuIn(cudnn, 1, 1024, 2048, 50, true);
-            gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
+        // {
+        //     std::vector<double> in(1024*2048*50);
+        //     double max = -10000;
+        //     for(int i = 0; i < (int)in.size(); i++)
+        //     {
+        //         if(i % (1024*256*10) == 0)
+        //         {
+        //             in[i] = (int)(i/10000);
+        //             if(in[i] > max)
+        //                 max = in[i];
+        //         }
+        //     }
+        //     tensor<double> gpuIn(cudnn, 1, 1024, 2048, 50, true);
+        //     gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
-            auto temp = gpuIn.reduceMaxAll();
-            std::vector<double> cpuOut = temp.toCpu();
+        //     auto temp = gpuIn.reduceMaxAll();
+        //     std::vector<double> cpuOut = temp.toCpu();
 
-            expect(cpuOut, {max}, "Reduce Max Large Sparse Double");
+        //     expect(cpuOut, {max}, "Reduce Max Large Sparse Double");
 
-        }
+        // }
 
         {
             std::vector<double> in(10*10*3);
@@ -269,22 +269,6 @@ namespace tensorTests
             std::vector<double> cpuOut = temp.toCpu();
 
             expect(cpuOut, {max}, "Reduce Max Double");
-
-            double scan = cpuOut[0];
-            std::cout << "answer: " << "[";
-            for(int i = 0; i < sizeof(double); i++)
-            {
-                std::cout << std::hex << (int)((unsigned char*)(&scan))[i] << ",";
-            }
-            std::cout << "]" << std::endl;
-
-            scan = max;
-            std::cout << "expected: " << "[";
-            for(int i = 0; i < sizeof(double); i++)
-            {
-                std::cout << std::hex << (int)((unsigned char*)(&scan))[i] << ",";
-            }
-            std::cout << "]" << std::endl;
         }
     }
     

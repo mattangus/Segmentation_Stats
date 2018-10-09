@@ -17,7 +17,7 @@ namespace fs = std::experimental::filesystem;
 class frequency : public stat
 {
 private:
-    std::vector<float> cpuRes;
+    std::vector<double> cpuRes;
     std::shared_ptr<pixelFreq> pixelFreqs;
     bool usePixelFreq; // if true then pixel freqs should be saved as well
 public:
@@ -38,12 +38,12 @@ public:
     {
         pixelFreqs->merge(cudnn);
 
-        tensor<float> gpuTemp = pixelFreqs->gpuRes->cast<float>();
+        tensor<double> gpuTemp = pixelFreqs->gpuRes->cast<double>();
 
-        // tensor<float> gpuMin = gpuTemp.reduceMinAll();
-        // tensor<float> gpuMax = gpuTemp.reduceMaxAll();
+        // tensor<double> gpuMin = gpuTemp.reduceMinAll();
+        // tensor<double> gpuMax = gpuTemp.reduceMaxAll();
 
-        tensor<float> gpuRes = gpuTemp.reduceSum({0, 1, 2});
+        tensor<double> gpuRes = gpuTemp.reduceSum({0, 1, 2});
 
         cpuRes = gpuRes.toCpu();
     }

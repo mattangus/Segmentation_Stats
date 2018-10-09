@@ -14,20 +14,20 @@ class imgFreq : public stat
 {
 protected:
     std::string name;
-    thread_map<std::unordered_map<std::string, std::vector<float>>> freqMap;
-    std::unordered_map<std::string, std::vector<float>> finalResult;
+    thread_map<std::unordered_map<std::string, std::vector<double>>> freqMap;
+    std::unordered_map<std::string, std::vector<double>> finalResult;
     const int maxClass;
 public:
     imgFreq(int maxClass) : name("ImageFreq"), maxClass(maxClass) { }
     ~imgFreq() { }
     void accumulate(cudnnHandle_t& cudnn, tensorUint8& gpuObj, std::string& path)
     {
-        tensor<float> temp = gpuObj.cast<float>();
-        std::vector<float> result = temp.oneHot(maxClass).reduceSum({0, 1, 2}).toCpu();
+        tensor<double> temp = gpuObj.cast<double>();
+        std::vector<double> result = temp.oneHot(maxClass).reduceSum({0, 1, 2}).toCpu();
 
         if(!freqMap.hasData())
         {
-            std::unordered_map<std::string, std::vector<float>> v;
+            std::unordered_map<std::string, std::vector<double>> v;
             freqMap.set(v);
         }
 
