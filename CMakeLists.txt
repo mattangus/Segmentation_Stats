@@ -15,14 +15,16 @@ set(CUDA_PROPAGATE_HOST_FLAGS ON)
 
 set(MAIN_SRC
 	"src/main.cu"
-	"lib/zupply.cpp"
+	"lib/zupply/zupply.cpp"
 )
 include_directories("include")
-include_directories(SYSTEM "lib")
+include_directories(SYSTEM "lib/zupply")
+include_directories(SYSTEM "lib/cnmem/include")
 include_directories(${OpenCV_INCLUDE_DIRS} ${CUDA_INCLUDE_DIRS})
+LINK_DIRECTORIES("lib/cnmem/build")
 
 cuda_add_executable(SegStats ${MAIN_SRC})
-target_link_libraries(SegStats ${OpenCV_LIBS} ${CUDA_LIBRARIES} cudnn stdc++fs)
+target_link_libraries(SegStats ${OpenCV_LIBS} ${CUDA_LIBRARIES} cudnn stdc++fs cnmem)
 
 
 set(TEST_SRC

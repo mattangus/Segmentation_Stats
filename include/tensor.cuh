@@ -4,6 +4,8 @@
 #include "common.cuh"
 #include "transform.cuh"
 
+#include <cnmem.h>
+
 #include <cuda.h>
 #include <cudnn.h>
 
