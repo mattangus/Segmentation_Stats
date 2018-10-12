@@ -55,7 +55,7 @@ public:
         //     gpuErrchk( cudaFree(f.second->data) );
         
     }
-    void accumulate(cudnnHandle_t& cudnn, tensorUint8& gpuIm, std::string& path)
+    void accumulate(cudaThreadCtx* ctx, tensorUint8& gpuIm, std::string& path)
     {
         if(gpuIm.d != 1)
         {
@@ -64,7 +64,7 @@ public:
         if(!gpuFreqs.hasData())
         {
             this->h = gpuIm.h; this->w = gpuIm.w; this->d = gpuIm.d;
-            std::shared_ptr<tensorInt64> tempGpu(new tensorInt64(cudnn, 1, h, w, maxClass, true));
+            std::shared_ptr<tensorInt64> tempGpu(new tensorInt64(ctx, 1, h, w, maxClass, true));
             tempGpu->set(0);
             gpuFreqs.set(tempGpu);
         }
@@ -73,17 +73,19 @@ public:
         
         dim3 blockDim(16,16);
 		dim3 blocks((w/blockDim.x)+1, (h/blockDim.y)+1); // blocks running on core
-        cudaKernels::accPixelFreq<<<blocks, blockDim>>>(gpuIm.getData(), gpuFreqs.get()->getData(), 1, h, w, maxClass);
+        cudaKernels::accPixelFreq<<<blocks, blockDim, 0, ctx->stream>>>(gpuIm.getData(), gpuFreqs.get()->getData(), 1, h, w, maxClass);
+        #ifdef SYNC_STREAM
 		gpuErrchk( cudaPeekAtLastError() );
-		gpuErrchk( cudaDeviceSynchronize() );
+		gpuErrchk( cudaStreamSynchronize(ctx->stream) );
+        #endif
     }
-    void finalize(cudnnHandle_t& cudnn)
+    void finalize(cudaThreadCtx* ctx)
     {
         //nothing to finialize
     }
-    void merge(cudnnHandle_t& cudnn)
+    void merge(cudaThreadCtx* ctx)
     {
-        gpuRes = std::shared_ptr<tensorInt64>(new tensorInt64(cudnn, 1, h, w, maxClass, true));
+        gpuRes = std::shared_ptr<tensorInt64>(new tensorInt64(ctx, 1, h, w, maxClass, true));
         gpuRes->set(0);
         for (auto & it : gpuFreqs.toList()) {
             //add(gpuRes->data, it.second->data, gpuRes->data, h, w, maxClass);

@@ -3,6 +3,7 @@
 #include "helpers.cuh"
 #include "common.cuh"
 #include "transform.cuh"
+#include "cudaThreadCtx.cuh"
 
 #include <cnmem.h>
 
@@ -26,9 +27,9 @@ private:
         combined_dims[1] = h * w;  // spatial dimensions (HW)
         combined_dims[2] = d;  // C (channels)
 
-        tensor<T> out(cudnn, n, h, w, d, true);
+        tensor<T> out(ctx, n, h, w, d, true);
 
-        RunSwapDimension1And2InTensor3(data, combined_dims, out.data, numElements());
+        RunSwapDimension1And2InTensor3(data, combined_dims, out.data, numElements(), ctx->stream);
 
         if(swapMem)
         {
@@ -49,9 +50,9 @@ private:
         combined_dims[1] = d;  // C (channel)
         combined_dims[2] = h * w;  // spatial dimensions (HW)
 
-        tensor<T> out(cudnn, n, h, w, d, true);
+        tensor<T> out(ctx, n, h, w, d, true);
 
-        RunSwapDimension1And2InTensor3(data, combined_dims, out.data, numElements());
+        RunSwapDimension1And2InTensor3(data, combined_dims, out.data, numElements(), ctx->stream);
 
         if(swapMem)
         {
@@ -72,8 +73,8 @@ private:
             throw std::runtime_error("Tensor format must be either 'NHWC' or 'NCHW'");
     }
 
-    tensor(cudnnHandle_t& cudnn, T* data, int n, int h, int w, int d)
-        : tensor(cudnn, data, CUDNN_TENSOR_NCHW, n, h, w, d)
+    tensor(cudaThreadCtx* ctx, T* data, int n, int h, int w, int d)
+        : tensor(ctx, data, CUDNN_TENSOR_NCHW, n, h, w, d)
     {
         
     }
@@ -84,7 +85,7 @@ private:
 
     T* data = nullptr;
 public:
-    cudnnHandle_t cudnn;
+    cudaThreadCtx* ctx;
     int n, h, w, d;
     cudnnTensorFormat_t format;
     tensor()
@@ -92,26 +93,26 @@ public:
 
     }
 
-    tensor(cudnnHandle_t& cudnn) : cudnn(cudnn) { }
+    tensor(cudaThreadCtx* ctx) : ctx(ctx) { }
 
-    tensor(cudnnHandle_t& cudnn, int n, int h, int w, int d) : cudnn(cudnn), n(n), h(h), w(w), d(d)
+    tensor(cudaThreadCtx* ctx, int n, int h, int w, int d) : ctx(ctx), n(n), h(h), w(w), d(d)
     {
 
     }
 
-    tensor(cudnnHandle_t& cudnn, T* data, cudnnTensorFormat_t format, int n, int h, int w, int d)
-        : cudnn(cudnn), data(data), n(n), h(h), w(w), d(d)
+    tensor(cudaThreadCtx* ctx, T* data, cudnnTensorFormat_t format, int n, int h, int w, int d)
+        : ctx(ctx), data(data), n(n), h(h), w(w), d(d)
     {
         handleFormat(format);
     }
 
-    tensor(cudnnHandle_t& cudnn, int n, int h, int w, int d, bool alloc) : tensor(cudnn,n,h,w,d)
+    tensor(cudaThreadCtx* ctx, int n, int h, int w, int d, bool alloc) : tensor(ctx,n,h,w,d)
     {
         if(alloc)
             allocateMem();
     }
 
-    tensor(tensor<T>&& other) : tensor(other.cudnn, other.data, other.n, other.h, other.w, other.d)
+    tensor(tensor<T>&& other) : tensor(other.ctx, other.data, other.n, other.h, other.w, other.d)
     {
         other.data = nullptr;
     }
@@ -120,7 +121,7 @@ public:
 
     ~tensor()
     {
-        gpuErrchk( cudaFree(data) );
+        gpuErrchk( cnmemFree(data, ctx->stream) );
     }
 
     T* getData()
@@ -146,8 +147,16 @@ public:
     void allocateMem()
     {
         //free data if already allocated
-        gpuErrchk( cudaFree(data) );
-        gpuErrchk( cudaMalloc((void**) &data, getSize()) );
+        gpuErrchk( cnmemFree(data, ctx->stream) );
+        //gpuErrchk( cudaMalloc((void**) &data, getSize()) );
+        // size_t freeb1, freeb2, freea1, freea2;
+        // size_t totalb1, totalb2, totala1, totala2;
+        // cudaMemGetInfo(&freeb1, &totalb1);
+        // cnmemMemGetInfo(&freeb2, &totalb2, ctx->stream);
+        gpuErrchk( cnmemMalloc((void**) &data, getSize(), ctx->stream) );
+        // cudaMemGetInfo(&freea1, &totala1);
+        // cnmemMemGetInfo(&freea2, &totala2, ctx->stream);
+
     }
     
     int numElements()
@@ -162,7 +171,7 @@ public:
 
     void set(T val)
     {
-        gpuErrchk( cudaMemset(data, val, getSize()) );
+        gpuErrchk( cudaMemset((void*) data, (int)val, getSize()) );
     }
     
     std::vector<T> toCpu()
@@ -198,8 +207,8 @@ public:
             w != other.w ||
             d != other.d)
             throw std::runtime_error("Cannot add operations with different dimension");
-        tensor<T> ret(cudnn, n, h, w, d, true);
-        add(data, other.data, ret.data, numElements());
+        tensor<T> ret(ctx, n, h, w, d, true);
+        add(data, other.data, ret.data, numElements(), ctx->stream);
         return ret;
     }
 
@@ -210,7 +219,7 @@ public:
             w != other.w ||
             d != other.d)
             throw std::runtime_error("Cannot add operations with different dimension");
-        add(data, other.data, data, numElements());
+        add(data, other.data, data, numElements(), ctx->stream);
         return *this;
     }
 
@@ -219,9 +228,9 @@ public:
         int outN = n, outH = h, outW = w, outD = d;
         setReduceDims(axes, &outN, &outH, &outW, &outD);
 
-        T* res = reduceSumWrapper(cudnn, data, axes, n, h, w, d);
+        T* res = reduceSumWrapper(ctx, data, axes, n, h, w, d);
 
-        return tensor<T>(cudnn, res, outN, outH, outW, outD);
+        return tensor<T>(ctx, res, outN, outH, outW, outD);
     }
 
     tensor<T> reduceMax(std::initializer_list<int> axes)
@@ -229,9 +238,9 @@ public:
         int outN = n, outH = h, outW = w, outD = d;
         setReduceDims(axes, &outN, &outH, &outW, &outD);
 
-        T* res = reduceMaxWrapper(cudnn, data, axes, n, h, w, d);
+        T* res = reduceMaxWrapper(ctx, data, axes, n, h, w, d);
 
-        return tensor<T>(cudnn, res, outN, outH, outW, outD);
+        return tensor<T>(ctx, res, outN, outH, outW, outD);
     }
     
     tensor<T> reduceMin(std::initializer_list<int> axes)
@@ -239,9 +248,9 @@ public:
         int outN = n, outH = h, outW = w, outD = d;
         setReduceDims(axes, &outN, &outH, &outW, &outD);
 
-        T* res = reduceMinWrapper(cudnn, data, axes, n, h, w, d);
+        T* res = reduceMinWrapper(ctx, data, axes, n, h, w, d);
 
-        return tensor<T>(cudnn, res, outN, outH, outW, outD);
+        return tensor<T>(ctx, res, outN, outH, outW, outD);
     }
     
     tensor<T> reduceMean(std::initializer_list<int> axes)
@@ -249,9 +258,9 @@ public:
         int outN = n, outH = h, outW = w, outD = d;
         setReduceDims(axes, &outN, &outH, &outW, &outD);
 
-        T* res = reduceMeanWrapper(cudnn, data, axes, n, h, w, d);
+        T* res = reduceMeanWrapper(ctx, data, axes, n, h, w, d);
 
-        return tensor<T>(cudnn, res, outN, outH, outW, outD);
+        return tensor<T>(ctx, res, outN, outH, outW, outD);
     }
     
     tensor<T> reduceProd(std::initializer_list<int> axes)
@@ -259,59 +268,59 @@ public:
         int outN = n, outH = h, outW = w, outD = d;
         setReduceDims(axes, &outN, &outH, &outW, &outD);
 
-        T* res = reduceProdWrapper(cudnn, data, axes, n, h, w, d);
+        T* res = reduceProdWrapper(ctx, data, axes, n, h, w, d);
 
-        return tensor<T>(cudnn, res, outN, outH, outW, outD);
+        return tensor<T>(ctx, res, outN, outH, outW, outD);
     }
     
     tensor<T> reduceSumAll()
     {
-        T* res = reduceSumAllWrapper(cudnn, data, n, h, w, d);
+        T* res = reduceSumAllWrapper(ctx, data, n, h, w, d);
 
-        return tensor<T>(cudnn, res, 1, 1, 1, 1);
+        return tensor<T>(ctx, res, 1, 1, 1, 1);
     }
 
     tensor<T> reduceMaxAll()
     {
-        T* res = reduceMaxAllWrapper(cudnn, data, n, h, w, d);
+        T* res = reduceMaxAllWrapper(ctx, data, n, h, w, d);
 
-        return tensor<T>(cudnn, res, 1, 1, 1, 1);
+        return tensor<T>(ctx, res, 1, 1, 1, 1);
     }
     
     tensor<T> reduceMinAll()
     {
-        T* res = reduceMinAllWrapper(cudnn, data, n, h, w, d);
+        T* res = reduceMinAllWrapper(ctx, data, n, h, w, d);
 
-        return tensor<T>(cudnn, res, 1, 1, 1, 1);
+        return tensor<T>(ctx, res, 1, 1, 1, 1);
     }
     
     tensor<T> reduceMeanAll()
     {
-        T* res = reduceMeanAllWrapper(cudnn, data, n, h, w, d);
+        T* res = reduceMeanAllWrapper(ctx, data, n, h, w, d);
 
-        return tensor<T>(cudnn, res, 1, 1, 1, 1);
+        return tensor<T>(ctx, res, 1, 1, 1, 1);
     }
     
     tensor<T> reduceProdAll()
     {
-        T* res = reduceProdAllWrapper(cudnn, data, n, h, w, d);
+        T* res = reduceProdAllWrapper(ctx, data, n, h, w, d);
 
-        return tensor<T>(cudnn, res, 1, 1, 1, 1);
+        return tensor<T>(ctx, res, 1, 1, 1, 1);
     }
     
     template<typename U> operator tensor<U>()
     {
         //cast(T1* gpuA, T2* gpuB, int numElem)
-        tensor<U> ret(cudnn, n, h, w, d, true);
-        cast(data, ret.data, numElements());
+        tensor<U> ret(ctx, n, h, w, d, true);
+        cast(data, ret.data, numElements(), ctx->stream);
         return ret;
     }
     
     template<typename U>
     tensor<U> cast()
     {
-        tensor<U> ret(cudnn, n, h, w, d, true);
-        castWrapper(data, ret.data, numElements());
+        tensor<U> ret(ctx, n, h, w, d, true);
+        castWrapper(data, ret.data, numElements(), ctx->stream);
         return ret;
     }
 
@@ -320,9 +329,9 @@ public:
         if(d != 1)
             throw std::runtime_error("5D tensor not implemented");
 
-        tensor<T> ret(cudnn, n, h, w, numClass, true);
+        tensor<T> ret(ctx, n, h, w, numClass, true);
         ret.set(off);
-        oneHotWrapper(data, ret.data, n, h, w, numClass, on);
+        oneHotWrapper(data, ret.data, n, h, w, numClass, on, ctx->stream);
         return ret;        
     }
 };

@@ -7,6 +7,8 @@
 #include <string>
 
 #include "helpers.cuh"
+#include "cudaThreadCtx.cuh"
+#include "threadCtxManager.cuh"
 
 static const std::string pass = "Test passed";
 static const std::string fail = "Test failed: ";
@@ -33,9 +35,14 @@ void expect(std::vector<T> ans, std::initializer_list<T> expected, std::string n
         std::cout << pass << std::endl;
 }
 
-    cudnnHandle_t cudnn;
+cudaThreadCtx* ctx;
+threadCtxManager* manager;
 
 void globalSetup()
 {
-	gpuErrchk( cudnnCreate(&cudnn) );
+    std::vector<int> availDevice;
+    availDevice.push_back(1);
+
+    manager = new threadCtxManager(3, availDevice);
+    ctx = (*manager)[0];
 }

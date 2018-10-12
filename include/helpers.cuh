@@ -5,8 +5,10 @@
 #include <cuda.h>
 #include <cuda_runtime_api.h>
 #include <cudnn.h>
+#include <cnmem.h>
 #include <exception>
 #include <sstream>
+#include <iostream>
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 
@@ -38,6 +40,20 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
     }
 }
 
+inline void gpuAssert(cnmemStatus_t code, const char *file, int line, bool abort=true)
+{
+    if (code != CNMEM_STATUS_SUCCESS) 
+    {
+        std::stringstream ss;
+        ss << "CNMEMassert: (" << code << ") " << cnmemGetErrorString(code) << " " << file << " " << line;
+        std::cerr << ss.str() << std::endl;
+        if (abort)
+        {
+            throw std::runtime_error(ss.str());
+        }
+    }
+}
+
 template<typename Out>
 void split(const std::string &s, char delim, Out result) {
     std::stringstream ss(s);
@@ -53,7 +69,7 @@ std::vector<std::string> split(const std::string &s, char delim) {
     return elems;
 }
 
-#define LAUNCH(kernel) kernel<<<(numElem + kThreadsPerBlock - 1) / kThreadsPerBlock, kThreadsPerBlock>>>
+#define LAUNCH(kernel, n, ktpb, sh, stream) kernel<<<((n) + (ktpb) - 1) / (ktpb), (ktpb), (sh), (stream)>>>
 
 //taken from tf (https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/util/cuda_device_functions.h)
 

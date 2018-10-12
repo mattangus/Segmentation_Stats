@@ -26,17 +26,17 @@ public:
         this->name = "frequency";
     }
     ~frequency() { }
-    void accumulate(cudnnHandle_t& cudnn, tensorUint8& gpuIm, std::string& path)
+    void accumulate(cudaThreadCtx* ctx, tensorUint8& gpuIm, std::string& path)
     {
-        pixelFreqs->accumulate(cudnn, gpuIm, path);
+        pixelFreqs->accumulate(ctx, gpuIm, path);
     }
-    void finalize(cudnnHandle_t& cudnn)
+    void finalize(cudaThreadCtx* ctx)
     {
         //nothing to finialize
     }
-    void merge(cudnnHandle_t& cudnn)
+    void merge(cudaThreadCtx* ctx)
     {
-        pixelFreqs->merge(cudnn);
+        pixelFreqs->merge(ctx);
 
         tensor<double> gpuTemp = pixelFreqs->gpuRes->cast<double>();
 

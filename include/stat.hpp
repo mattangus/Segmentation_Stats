@@ -14,12 +14,12 @@ protected:
     std::string name;
 public:
     virtual ~stat() { }
-    virtual void accumulate(cudnnHandle_t& cudnn, tensorUint8& gpuObj, std::string& path) = 0;
+    virtual void accumulate(cudaThreadCtx* ctx, tensorUint8& gpuObj, std::string& path) = 0;
     // void accumulate(unsigned char* d_obj, int h, int w, int d)
     // {
     //     accumulate(d_obj, int h, int w, int d, 0);
     // }
-    virtual void finalize(cudnnHandle_t& cudnn) = 0;
-    virtual void merge(cudnnHandle_t& cudnn) = 0;
+    virtual void finalize(cudaThreadCtx* ctx) = 0;
+    virtual void merge(cudaThreadCtx* ctx) = 0;
     virtual void save(std::string outputFolder) = 0;
 };
