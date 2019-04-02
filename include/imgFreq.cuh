@@ -20,7 +20,7 @@ protected:
 public:
     imgFreq(int maxClass) : name("ImageFreq"), maxClass(maxClass) { }
     ~imgFreq() { }
-    void accumulate(cudnnHandle_t& cudnn, tensorUint8& gpuObj, std::string& path)
+    void accumulate(cudaThreadCtx* ctx, tensorUint8& gpuObj, std::string& path)
     {
         tensor<double> temp = gpuObj.cast<double>();
         std::vector<double> result = temp.oneHot(maxClass).reduceSum({0, 1, 2}).toCpu();
@@ -34,11 +34,11 @@ public:
         freqMap.get()[path] = result;
     }
 
-    void finalize(cudnnHandle_t& cudnn)
+    void finalize(cudaThreadCtx* ctx)
     {
         //nothing to finalize
     }
-    void merge(cudnnHandle_t& cudnn)
+    void merge(cudaThreadCtx* ctx)
     {
         for (auto & it : freqMap.toList()) {
             //add(gpuRes->data, it.second->data, gpuRes->data, h, w, maxClass);

@@ -189,12 +189,14 @@ namespace cudaKernels {
 // 3D tensor. It looks at the shape of the incoming data, and decides the best
 // strategy to launch.
 template <typename T>
-void RunSwapDimension1And2InTensor3(const T* input, const Dimension<3>& input_dims, T* output, int numElem) {
+void RunSwapDimension1And2InTensor3(const T* input, const Dimension<3>& input_dims, T* output, int numElem, cudaStream_t stream) {
     
-    int kThreadsPerBlock = 1024;
-    LAUNCH((cudaKernels::ShuffleInTensor3Simple<T, 0, 2, 1>))(numElem, input, input_dims, output);
+    int kTPB = 1024;
+    LAUNCH((cudaKernels::ShuffleInTensor3Simple<T, 0, 2, 1>), numElem, kTPB, 0, stream)(numElem, input, input_dims, output);
     //<<<(numElem + kThreadsPerBlock - 1) / kThreadsPerBlock, kThreadsPerBlock>>>
+    #ifdef SYNC_STREAM
     gpuErrchk( cudaPeekAtLastError() );
-    gpuErrchk( cudaDeviceSynchronize() );
+    gpuErrchk( cudaStreamSynchronize(stream) );
+    #endif
 
 }

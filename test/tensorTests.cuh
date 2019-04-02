@@ -7,6 +7,7 @@
 
 #include "tensor.cuh"
 #include "testHelper.cuh"
+#include "cudaThreadCtx.cuh"
 
 #define PRINT_SHAPE(t) std::cout << #t << ".shape: [" << (t).n << "," << (t).h << "," << (t).w << "," << (t).d << "]" << std::endl
 
@@ -18,11 +19,71 @@ namespace tensorTests
 
     }
 
+    void testAlloc()
+    {
+        try
+        {
+            std::vector<float> in = {0,1,2,3,4,5,6,7,8,9};
+            tensor<float> gpuIn(ctx, 1, 1, 1, 10, true);
+            gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
+            std::cout << "Alloc Passed" << std::endl;
+        }
+        catch(std::exception& ex)
+        {
+            std::cout << "Alloc Fialed: " << ex.what() << std::endl;
+        }
+    }
+
+    void testAdd()
+    {
+        {
+            std::vector<float> in = {0,1,2,3,4,5,6,7,8,9};
+
+            float* gpuA;
+            float* gpuB;
+            float* gpuC;
+            int size = in.size()*sizeof(float);
+            gpuErrchk( cnmemMalloc((void**)&gpuA, size, ctx->stream) );
+            gpuErrchk( cnmemMalloc((void**)&gpuB, size, ctx->stream) );
+            gpuErrchk( cnmemMalloc((void**)&gpuC, size, ctx->stream) );
+
+            gpuErrchk( cudaMemsetAsync(gpuA, 0, size, ctx->stream) );
+            gpuErrchk( cudaMemsetAsync(gpuB, 0, size, ctx->stream) );
+            gpuErrchk( cudaMemsetAsync(gpuC, 0, size, ctx->stream) );
+
+            gpuErrchk( cudaMemcpyAsync(gpuA, &in[0], size, cudaMemcpyHostToDevice, ctx->stream) );
+            gpuErrchk( cudaMemcpyAsync(gpuB, &in[0], size, cudaMemcpyHostToDevice, ctx->stream) );
+            gpuErrchk( cudaMemcpyAsync(gpuC, &in[0], size, cudaMemcpyHostToDevice, ctx->stream) );
+
+            int kThreadsPerBlock = 1024;
+            cudaKernels::addOp<<<(in.size() + kThreadsPerBlock - 1) / kThreadsPerBlock, kThreadsPerBlock, 0, ctx->stream>>>(gpuA, gpuB, gpuC, in.size());
+
+            std::vector<float> out(in.size());
+            gpuErrchk( cudaMemcpyAsync(&out[0], gpuC, size, cudaMemcpyDeviceToHost, ctx->stream) );
+            gpuErrchk( cudaStreamSynchronize (ctx->stream) );
+
+            expect(out, {0.0f,2.0f,4.0f,6.0f,8.0f,10.0f,12.0f,14.0f,16.0f,18.0f}, "Add primitive");
+        }
+
+        {
+            std::vector<float> in = {0,1,2,3,4,5,6,7,8,9};
+            tensor<float> gpuInA(ctx, 1, 1, 1, 10, true);
+            tensor<float> gpuInB(ctx, 1, 1, 1, 10, true);
+            gpuInA.toGpu(in, CUDNN_TENSOR_NHWC);
+            gpuInB.toGpu(in, CUDNN_TENSOR_NHWC);
+
+            tensor<float> res = gpuInA + gpuInB;
+            std::vector<float> out = res.toCpu();
+
+            expect(out, {0.0f,2.0f,4.0f,6.0f,8.0f,10.0f,12.0f,14.0f,16.0f,18.0f}, "Add");
+        }
+    }
+
     void testReduceSum1D()
     {
         {
             std::vector<float> in = {0,1,2,3,4,5,6,7,8,9};
-            tensor<float> gpuIn(cudnn, 1, 1, 1, 10, true);
+            tensor<float> gpuIn(ctx, 1, 1, 1, 10, true);
             gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
             auto temp = gpuIn.reduceSum({3});
@@ -33,7 +94,7 @@ namespace tensorTests
 
         {
             std::vector<float> in = {0,1,2,3,4,5,6,7,8,9};
-            tensor<float> gpuIn(cudnn, 1, 1, 10, 1, true);
+            tensor<float> gpuIn(ctx, 1, 1, 10, 1, true);
             gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
             auto temp = gpuIn.reduceSum({2});
@@ -44,7 +105,7 @@ namespace tensorTests
 
         {
             std::vector<float> in = {0,1,2,3,4,5,6,7,8,9};
-            tensor<float> gpuIn(cudnn, 1, 10, 1, 1, true);
+            tensor<float> gpuIn(ctx, 1, 10, 1, 1, true);
             gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
             auto temp = gpuIn.reduceSum({1});
@@ -55,7 +116,7 @@ namespace tensorTests
 
         {
             std::vector<float> in = {0,1,2,3,4,5,6,7,8,9};
-            tensor<float> gpuIn(cudnn, 10, 1, 1, 1, true);
+            tensor<float> gpuIn(ctx, 10, 1, 1, 1, true);
             gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
             auto temp = gpuIn.reduceSum({0});
@@ -69,7 +130,7 @@ namespace tensorTests
     {
         {
             std::vector<float> in = {0,1,2,3,4,5,6,7,8,9};
-            tensor<float> gpuIn(cudnn, 1, 1, 2, 5, true);
+            tensor<float> gpuIn(ctx, 1, 1, 2, 5, true);
             gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
             auto temp = gpuIn.reduceSum({3});
@@ -80,7 +141,7 @@ namespace tensorTests
 
         {
             std::vector<float> in = {0,1,2,3,4,5,6,7,8,9};
-            tensor<float> gpuIn(cudnn, 1, 1, 5, 2, true);
+            tensor<float> gpuIn(ctx, 1, 1, 5, 2, true);
             gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
             auto temp = gpuIn.reduceSum({2});
@@ -91,7 +152,7 @@ namespace tensorTests
 
         {
             std::vector<float> in = {3,5,7,11,13,17,19,23,29,31};
-            tensor<float> gpuIn(cudnn, 1, 1, 5, 2, true);
+            tensor<float> gpuIn(ctx, 1, 1, 5, 2, true);
             gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
             auto temp = gpuIn.reduceSum({3});
@@ -102,7 +163,7 @@ namespace tensorTests
 
         {
             std::vector<float> in = {3,5,7,11,13,17,19,23,29,31};
-            tensor<float> gpuIn(cudnn, 1, 5, 1, 2, true);
+            tensor<float> gpuIn(ctx, 1, 5, 1, 2, true);
             gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
             auto temp = gpuIn.reduceSum({3});
@@ -113,7 +174,7 @@ namespace tensorTests
 
         {
             std::vector<float> in = {3,5,7,11,13,17,19,23,29,31};
-            tensor<float> gpuIn(cudnn, 5, 1, 1, 2, true);
+            tensor<float> gpuIn(ctx, 5, 1, 1, 2, true);
             gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
             auto temp = gpuIn.reduceSum({3});
@@ -125,7 +186,7 @@ namespace tensorTests
 
         {
             std::vector<float> in = {0,1,2,3,4,5,6,7,8,9};
-            tensor<float> gpuIn(cudnn, 1, 2, 5, 1, true);
+            tensor<float> gpuIn(ctx, 1, 2, 5, 1, true);
             gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
             auto temp = gpuIn.reduceSum({2});
@@ -136,7 +197,7 @@ namespace tensorTests
 
         {
             std::vector<float> in = {0,1,2,3,4,5,6,7,8,9};
-            tensor<float> gpuIn(cudnn, 1, 5, 2, 1, true);
+            tensor<float> gpuIn(ctx, 1, 5, 2, 1, true);
             gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
             auto temp = gpuIn.reduceSum({1});
@@ -147,7 +208,7 @@ namespace tensorTests
 
         {
             std::vector<float> in = {0,1,2,3,4,5,6,7,8,9};
-            tensor<float> gpuIn(cudnn, 1, 2, 5, 1, true);
+            tensor<float> gpuIn(ctx, 1, 2, 5, 1, true);
             gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
             auto temp = gpuIn.reduceSum({1});
@@ -158,7 +219,7 @@ namespace tensorTests
 
         {
             std::vector<float> in = {0,1,2,3,4,5,6,7,8,9};
-            tensor<float> gpuIn(cudnn, 5, 2, 1, 1, true);
+            tensor<float> gpuIn(ctx, 5, 2, 1, 1, true);
             gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
             auto temp = gpuIn.reduceSum({0});
@@ -172,7 +233,7 @@ namespace tensorTests
     {
         {
             std::vector<float> in = {0,1,2,3,4,5,6,7,8,9};
-            tensor<float> gpuIn(cudnn, 1, 1, 2, 5, true);
+            tensor<float> gpuIn(ctx, 1, 1, 2, 5, true);
             gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
             auto temp = gpuIn.reduceMax({3});
@@ -183,7 +244,7 @@ namespace tensorTests
 
         {
             std::vector<float> in = {0,1,2,3,4,5,6,7,8,9};
-            tensor<float> gpuIn(cudnn, 1, 1, 5, 2, true);
+            tensor<float> gpuIn(ctx, 1, 1, 5, 2, true);
             gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
             auto temp = gpuIn.reduceMax({2});
@@ -201,7 +262,7 @@ namespace tensorTests
         //         if(in[i] > max)
         //             max = in[i];
         //     }
-        //     tensor<float> gpuIn(cudnn, 1, 1024, 2048, 3, true);
+        //     tensor<float> gpuIn(ctx, 1, 1024, 2048, 3, true);
         //     gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
         //     auto temp = gpuIn.reduceMaxAll();
@@ -222,7 +283,7 @@ namespace tensorTests
         //                 max = in[i];
         //         }
         //     }
-        //     tensor<float> gpuIn(cudnn, 1, 1024, 2048, 50, true);
+        //     tensor<float> gpuIn(ctx, 1, 1024, 2048, 50, true);
         //     gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
         //     auto temp = gpuIn.reduceMaxAll();
@@ -243,7 +304,7 @@ namespace tensorTests
         //                 max = in[i];
         //         }
         //     }
-        //     tensor<double> gpuIn(cudnn, 1, 1024, 2048, 50, true);
+        //     tensor<double> gpuIn(ctx, 1, 1024, 2048, 50, true);
         //     gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
         //     auto temp = gpuIn.reduceMaxAll();
@@ -262,7 +323,7 @@ namespace tensorTests
                 if(in[i] > max)
                     max = in[i];
             }
-            tensor<double> gpuIn(cudnn, 1, 10, 10, 3, true);
+            tensor<double> gpuIn(ctx, 1, 10, 10, 3, true);
             gpuIn.toGpu(in, CUDNN_TENSOR_NHWC);
 
             auto temp = gpuIn.reduceMaxAll();
@@ -271,9 +332,11 @@ namespace tensorTests
             expect(cpuOut, {max}, "Reduce Max Double");
         }
     }
-    
+
     void runAllTests()
     {
+        testAdd();
+        testAlloc();
         testReduceSum1D();
         testReduceSum2D();
         testReduceMax2D();

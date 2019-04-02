@@ -21,8 +21,10 @@
 #include "pixelFreq.cuh"
 #include "statManager.hpp"
 #include "tensor.cuh"
+#include "cudaThreadCtx.cuh"
+#include "threadCtxManager.cuh"
 
-#include "zupply.hpp"
+#include <zupply.hpp>
 
 namespace fs = std::experimental::filesystem;
 
@@ -49,20 +51,18 @@ std::vector<std::string> GetImagesToProcess(std::string& inputPath, std::string&
 	return ret;
 }
 
-void processLoop(std::vector<std::string>* toProcess, std::string* base_path, int device, std::vector<std::shared_ptr<stat>>* stats, zz::log::ProgBar* pBar)
+void processLoop(std::vector<std::string>* toProcess,
+				std::string* base_path,
+				std::vector<std::shared_ptr<stat>>* stats,
+				cudaThreadCtx* ctx,
+				zz::log::ProgBar* pBar)
 {
 	//each process loop has it's own thread!
-	cudnnHandle_t cudnn;
-	gpuErrchk( cudnnCreate(&cudnn) );
 
-	gpuErrchk( cudaSetDevice(device) );
-	gpuErrchk( cudaPeekAtLastError() );
-	gpuErrchk( cudaDeviceSynchronize() );
+	ctx->setDevice();
 
-	tensorUint8 gpuIm(cudnn);
+	tensorUint8 gpuIm(ctx);
 	bool inited = false;
-
-	
 
 	for(int i = 0; i < (int)toProcess->size(); i++)
 	{
@@ -90,10 +90,10 @@ void processLoop(std::vector<std::string>* toProcess, std::string* base_path, in
 
 		// gpuErrchk( cudaMemcpy(gpuIm, bgr[0].ptr(), imSize, cudaMemcpyHostToDevice) );
 		gpuIm.toGpu(bgr[0].ptr(), CUDNN_TENSOR_NHWC);
-
+		auto val = gpuIm.toCpu();
 		for(auto s : *stats)
 		{
-			s->accumulate(cudnn, gpuIm, curPath);
+			s->accumulate(ctx, gpuIm, curPath);
 		}
 
 		pBar->step();
@@ -104,7 +104,7 @@ void processLoop(std::vector<std::string>* toProcess, std::string* base_path, in
 	// gpuErrchk( cudaFree(gpuIm) );
 	for(auto s : *stats)
 	{
-		s->finalize(cudnn);
+		s->finalize(ctx);
 	}
 	// std::cout << "done" << std::endl;
 }
@@ -180,7 +180,9 @@ int main( int argc, char** argv )
 		if (strcmp(argv[i], "-c") == 0)
 			maxClass = atoi(argv[i+1]);
 	}
-
+	#ifdef SYNC_STREAM
+	std::cout << "WARNING: stream sync active" << std::endl;
+    #endif
 	std::cout << "base path: '" << base_path << "'" << std::endl;
 	std::cout << "output path: '" << output_path << "'" << std::endl;
 	std::cout << "num thread: " << numThread << std::endl;
@@ -189,6 +191,17 @@ int main( int argc, char** argv )
 	for(auto& v : availDevice)
 		std::cout << v << ", ";
 	std::cout << ")" << std::endl;
+
+	if(availDevice.size() > 1)
+	{
+		throw std::runtime_error("Can't use more than one gpu");
+	}
+
+	gpuErrchk( cudaSetDevice(availDevice[0]) );
+	gpuErrchk( cudaPeekAtLastError() );
+	gpuErrchk( cudaDeviceSynchronize() );
+
+	threadCtxManager ctxManager(numThread, availDevice);
 
 	std::vector<std::shared_ptr<stat>> stats = manager.getStatList(maxClass);
 
@@ -209,8 +222,7 @@ int main( int argc, char** argv )
 		std::vector<std::vector<std::string>> splitVals = SplitVector(toProcess, numThread);
 		for(int i = 0; i < numThread && i < (int)splitVals.size(); i++)
 		{
-			int d = availDevice[i % availDevice.size()];
-			threads.push_back(std::thread(processLoop, &splitVals[i], &base_path, d, &stats, &pBar));
+			threads.push_back(std::thread(processLoop, &splitVals[i], &base_path, &stats, ctxManager[i], &pBar));
 		}
 
 		for(std::thread& t : threads)
@@ -220,16 +232,20 @@ int main( int argc, char** argv )
 	}
 	else if(toProcess.size() > 0)
 	{
-		processLoop(&toProcess, &base_path, availDevice[0], &stats, &pBar);
+		processLoop(&toProcess, &base_path, &stats, ctxManager[0], &pBar);
 	}
 	
-	//main thread doesnt have a cudnn handle
-	cudnnHandle_t cudnn;
-	gpuErrchk( cudnnCreate(&cudnn) );
+	// main thread doesnt have a cudnn handle
+	// std::vector<int> temp;
+	// temp.push_back(0);
+	// threadCtxManager mainManager(1, temp);
+
+	gpuErrchk( cudaPeekAtLastError() );
+	gpuErrchk( cudaDeviceSynchronize() );
 
 	for(auto s : stats)
 	{
-		s->merge(cudnn);
+		s->merge(ctxManager[0]);
 	}
 
 	duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
