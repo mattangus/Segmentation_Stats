@@ -97,22 +97,23 @@ public:
         fs::path base = outputFolder;
         base = base / name;
         fs::create_directories(base);
-        std::vector<std::vector<unsigned char>> frames;
+        std::vector<std::vector<float>> frames;
         std::vector<bool> hasValues;
+        //find max and convert to float (opencv can't save int32 in exr)
         for (int c = 0; c < maxClass; c++)
         {
-            std::vector<unsigned char> cur(h*w*d);
-            long double maxVal = -1;
+            std::vector<float> cur(h*w*d);
+            float maxVal = -1;
             for (int i = 0; i < h*w*d; i++)
             {
-                long double temp = (long double)cpuRes[i*maxClass + c];
+                float temp = (float)cpuRes[i*maxClass + c];
                 if(temp > maxVal)
                     maxVal = temp;
             }
             for (int i = 0; i < h*w*d; i++)
             {
-                long double temp = (long double)cpuRes[i*maxClass + c] / maxVal;
-                cur[i] = (unsigned char)(temp*255.0);
+                float temp = (float)cpuRes[i*maxClass + c];
+                cur[i] = temp;
             }
             hasValues.push_back(maxVal != 0);
             frames.push_back(cur);
@@ -120,12 +121,12 @@ public:
         std::vector<cv::Mat> classes(maxClass);
         for (int i=0; i < (int)classes.size(); i++) 
         {
-            classes[i] = cv::Mat(h, w, CV_8UC1);
-            memcpy(classes[i].data, frames[i].data(), frames[i].size()*sizeof(char));
+            classes[i] = cv::Mat(h, w, CV_32FC1);
+            memcpy(classes[i].data, frames[i].data(), frames[i].size()*sizeof(float));
             if(hasValues[i])
             {
                 std::stringstream ss;
-                ss << base.string() << "/" << i << ".png";
+                ss << base.string() << "/" << i << ".exr";
                 cv::imwrite(ss.str(), classes[i]);
             }
         }
