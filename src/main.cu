@@ -154,7 +154,7 @@ std::vector<int> parseDeviceList(std::string devList)
 int main( int argc, char** argv )
 {
 	// grab the arguments
-	std::string base_path, depth_path, output_path;
+	std::string base_path, output_path;
 	std::string ending = "png";
 	int numThread = 8;
 	int maxClass = 20;
@@ -167,8 +167,6 @@ int main( int argc, char** argv )
 			base_path = argv[i+1];
 		if (strcmp(argv[i], "-o") == 0)
 			output_path = argv[i+1];
-		if (strcmp(argv[i], "-d") == 0)
-			depth_path = argv[i + 1];
 		if (strcmp(argv[i], "-e") == 0)
 			ending = argv[i + 1];
 		if (strcmp(argv[i], "-n") == 0)
