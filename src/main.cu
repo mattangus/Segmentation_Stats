@@ -55,7 +55,8 @@ void processLoop(std::vector<std::string>* toProcess,
 				std::string* base_path,
 				std::vector<std::shared_ptr<stat>>* stats,
 				cudaThreadCtx* ctx,
-				zz::log::ProgBar* pBar)
+				zz::log::ProgBar* pBar,
+				int height, int width)
 {
 	//each process loop has it's own thread!
 
@@ -74,6 +75,10 @@ void processLoop(std::vector<std::string>* toProcess,
 			im = cv::imread(curPath, CV_LOAD_IMAGE_COLOR);
 			if(!im.data) //only be able to parse if IEND chunk is found
 				std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		}
+		if(height > 0 && width > 0)
+		{
+			cv::resize(im, im, cv::Size(width, height),cv::INTER_NEAREST);
 		}
 		cv::Mat bgr[3]; //destination array
 		cv::split(im,bgr); //split source
@@ -153,6 +158,7 @@ int main( int argc, char** argv )
 	std::string ending = "png";
 	int numThread = 8;
 	int maxClass = 20;
+	int height = -1, width = -1;
 	std::vector<int> availDevice = {0}; //static max number because this uses a lot of GPU, so only one per GPU
 	statManager manager;
 	for (int i = 0; i < argc; i++)
@@ -179,6 +185,10 @@ int main( int argc, char** argv )
 			manager.addImageFrequency();
 		if (strcmp(argv[i], "-c") == 0)
 			maxClass = atoi(argv[i+1]);
+		if (strcmp(argv[i], "-h") == 0)
+			height = atoi(argv[i+1]);
+		if (strcmp(argv[i], "-w") == 0)
+			width = atoi(argv[i+1]);
 	}
 	#ifdef SYNC_STREAM
 	std::cout << "WARNING: stream sync active" << std::endl;
@@ -222,7 +232,7 @@ int main( int argc, char** argv )
 		std::vector<std::vector<std::string>> splitVals = SplitVector(toProcess, numThread);
 		for(int i = 0; i < numThread && i < (int)splitVals.size(); i++)
 		{
-			threads.push_back(std::thread(processLoop, &splitVals[i], &base_path, &stats, ctxManager[i], &pBar));
+			threads.push_back(std::thread(processLoop, &splitVals[i], &base_path, &stats, ctxManager[i], &pBar, height, width));
 		}
 
 		for(std::thread& t : threads)
@@ -232,7 +242,7 @@ int main( int argc, char** argv )
 	}
 	else if(toProcess.size() > 0)
 	{
-		processLoop(&toProcess, &base_path, &stats, ctxManager[0], &pBar);
+		processLoop(&toProcess, &base_path, &stats, ctxManager[0], &pBar, height, width);
 	}
 	
 	// main thread doesnt have a cudnn handle

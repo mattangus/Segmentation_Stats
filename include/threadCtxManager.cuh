@@ -29,7 +29,7 @@ public:
         size_t freev, totalv;
         gpuErrchk( cudaMemGetInfo(&freev, &totalv) );
 
-        size_t toUse = totalv * 0.95f;
+        size_t toUse = freev * 0.95f;
         size_t perStream = align(toUse / numThread, 8);
 
         ctx = new cudaThreadCtx[numThread];
