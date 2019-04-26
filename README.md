@@ -3,7 +3,7 @@ Collect various statistics from a semantic segmentation datasets. The program wi
 
 *Notice*: Always use the number of classes plus one. All values higher than number of classes (e.g. 255 for ignore) are grouped into the top class.
 
-**Performance**: Using a TitanXp and 8 computing threads/streams I get around 36.8403 im/sec.
+**Performance**: Using a TitanXp and 8 computing threads/streams I get around 36.8403 im/sec with resizing and 63.7906 im/sec without.
 
 There are 3 available stats currently implemented:
 ## Frequency
